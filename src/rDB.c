@@ -54,8 +54,6 @@
 
 #endif
 
-// List of all rDB data pools
- 
 #define PP_T  rdb_bpp_t
 
 
@@ -70,10 +68,10 @@
 rdb_pool_t  *pool_root;
 
 
-struct  RDB_POOLS **poolIds;
+//struct  RDB_POOLS **poolIds;
 
 #ifdef KM
-struct 	RDB_POOLS **poolIdsTmp;
+//struct 	RDB_POOLS **poolIdsTmp;
 #endif
 
 char   	*rdb_error_string = NULL;
@@ -468,7 +466,6 @@ int keyCompDebug (rdb_pool_t *pool, int index, void *old, void *new)
     return 0;
 }
 #endif
-//#undef DEBUG
 
 int     levels,
         maxLevels;
@@ -488,15 +485,11 @@ void setPointers (rdb_pool_t *pool, int index, void *start, PP_T ** ppk, void **
     return;
 }
 
-void _rdbDump (int id, int index, void *start)
+void _rdbDump (rdb_pool_t *pool, int index, void *start)
 {
     void  **searchNext;
     PP_T   *pp;
-    rdb_pool_t *pool;
-
     rdb_key_union *key;
-
-    pool = poolIds[id];
 
     if (start == NULL && pool->root[index] == NULL) return;
 
@@ -521,7 +514,7 @@ void _rdbDump (int id, int index, void *start)
         key = (void *) searchNext + pool->key_offset[index];
 
         if (pp->left != NULL) {
-            _rdbDump (id, index, pp->left);
+            _rdbDump (pool, index, pp->left);
             levels--;
         }
 
@@ -596,7 +589,7 @@ void _rdbDump (int id, int index, void *start)
 #endif
 
         if (pp->right != NULL) {
-            _rdbDump (id, index, pp->right);
+            _rdbDump (pool, index, pp->right);
             levels--;
         }
     }
@@ -606,33 +599,22 @@ void _rdbDump (int id, int index, void *start)
 
 }
 
-int rdbLock(int id) 
+int rdbLock(rdb_pool_t *pool) 
 {
-    rdb_pool_t *pool;
-    pool = poolIds[id];
-
-    //printf("---Lock %d\n",id);
     return pthread_mutex_lock(&pool->write_mutex);
 }
 
-int rdbUnlock(int id) 
+int rdbUnlock(rdb_pool_t *pool) 
 {
-    rdb_pool_t *pool;
-    pool = poolIds[id];
-    //printf("-unLock %d\n",id);
-
     return pthread_mutex_unlock(&pool->write_mutex);
 }
 
-void rdbDump (int id, int index)
+void rdbDump (rdb_pool_t *pool, int index)
 {
-    rdb_pool_t *pool;
-    pool = poolIds[id];
-
     if (pool->root[index] == NULL) return;
 
     if ((pool->FLAGS[index] & (RDB_KEYS)) != 0)
-        _rdbDump (id, index, NULL);
+        _rdbDump (pool, index, NULL);
 }
 //#define DEBUG
 int _rdbInsert (rdb_pool_t *pool, void *data, void *start, int index, void *parent, int side)
@@ -963,14 +945,11 @@ int _rdbInsert (rdb_pool_t *pool, void *data, void *start, int index, void *pare
 // return shoud be the # of updated indexes, which must maych the number of defined indexes, anything less shows an error
 // TODO? should we make this atomic - meaning if one index failes fo insert, delete the previously inserted ones?
 
-int rdb_insert (int id, void *data)
+int rdb_insert (rdb_pool_t *pool, void *data)
 {
     int     indexCount;
     int     rc = 0;
-    rdb_pool_t *pool;
   
-    pool = poolIds[id];
-
     if (data != NULL)
         for (indexCount = 0; indexCount < pool->indexCount; indexCount++) 
             (_rdbInsert (pool, data, pool->root[indexCount], 
@@ -982,12 +961,8 @@ int rdb_insert (int id, void *data)
 }
 
 // only insert one index (asuming this index was removed and updated prior).
-int rdbInsertOne (int id, int index, void *data)
+int rdbInsertOne (rdb_pool_t *pool, int index, void *data)
 {
-
-    rdb_pool_t *pool;
-
-    pool = poolIds[id];
     return _rdbInsert (pool, data, pool->root[index], index, NULL, 0) ;
 }
 
@@ -1059,14 +1034,9 @@ void   *_rdbGet (rdb_pool_t *pool, int index, void *data, void *start, int parti
 }
 
 //as a special case, if data = null, root node will be returned.
-void   *rdbGet (int id, int idx, void *data)
+void   *rdbGet (rdb_pool_t *pool, int idx, void *data)
 {
-    rdb_pool_t *pool;
-
-    pool = poolIds[id];
-#ifdef DEBUG
-    printout("Get:pool=%s,idx=%d", pool->name, idx);
-#endif
+    debug("Get:pool=%s,idx=%d", pool->name, idx);
     return _rdbGet (pool, idx, data, NULL, 0);
 }
 
@@ -1148,23 +1118,9 @@ void   *_rdbGetNeigh (rdb_pool_t *pool, int index, void *data, void *start, int 
 
     return NULL;                                //should never eet here
 }
-void   *rdbGetNeigh (int id, int idx, void *data, void **before, void **after)
+void   *rdbGetNeigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after)
 {
-    rdb_pool_t *pool;
-
-    pool = poolIds[id];
     return _rdbGetNeigh (pool, idx, data, NULL, 0, before, after);
-
-}
-
-
-void   *rdbGetPartial (int id, int idx,
-                       void *data)  //get , ignoring the accomulator field for multiple index entries
-{
-    rdb_pool_t *pool;
-
-    pool = poolIds[id];
-    return _rdbGet (pool, idx, data, NULL, 1);
 }
 
 inline int _rdbDeleteByPointer (rdb_pool_t *pool, void *parent, int index, PP_T * ppkDead,
@@ -1368,15 +1324,13 @@ rfeStart:
  */
 
 //int _rdbForEach (rdb_pool_t *pool, int index, int fn (void *, void *), void *data, void del_fn(void *, void*),void *delfn_data, void *start, void *parent, int side, void **resumePtr)
-void rdbIterateDelete(int id, int index, int fn(void *, void *), void *fn_data, void del_fn(void *,
+void rdbIterateDelete(rdb_pool_t *pool, int index, int fn(void *, void *), void *fn_data, void del_fn(void *,
                       void *), void *del_data)
 {
     void        *resumePtr;
     int         rc = 0;
-    rdb_pool_t  *pool;
 
     resumePtr = NULL;
-    pool = poolIds[id];
 
     if (pool->root[index] == NULL)
         return;
@@ -1493,14 +1447,11 @@ void _rdbFlushList( rdb_pool_t *pool, void *start, void fn( void *, void *), voi
         while (start != NULL);
 }
 
-void rdbFlush( int id, void fn( void *, void *), void *fn_data)
+void rdbFlush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data)
 {
 
     int cnt;
-    rdb_pool_t *pool;
-
-    pool = poolIds[id];
-
+    
     if (pool->root[0] == NULL)
         return;
 
@@ -2062,14 +2013,11 @@ retest_delete_cond:
 }
 
 void   *
-rdbDelete (int id, int lookupIndex, void *data)
+rdbDelete (rdb_pool_t *pool, int lookupIndex, void *data)
 {
 
     int     indexCount;
     void   *ptr = NULL;                         // null to sashhh the compiler
-    rdb_pool_t *pool;
-
-    pool = poolIds[id];
 
     if (pool->FLAGS[lookupIndex] & (RDB_NOKEYS)) {
         PP_T   *ppk = NULL,
@@ -2123,11 +2071,8 @@ rdbDelete (int id, int lookupIndex, void *data)
 
     return ptr;
 }
-int rdbDeleteOne (int id, int index, void *data)
+int rdbDeleteOne (rdb_pool_t *pool, int index, void *data)
 {
-
-    rdb_pool_t *pool;
-    pool = poolIds[id];
     return _rdbDelete (pool, index, data, NULL, NULL, 0);
 }
 

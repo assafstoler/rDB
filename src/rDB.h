@@ -4,10 +4,6 @@
 #include <sys/time.h>
 #include <stdint.h>
 
-//#define RDB_KEYS RDB_KPSTR | RDB_KSTR | RDB_KINT | RDB_KUINT8 | RDB_KINT16 | RDB_KUINT16 | RDB_KINT32 | RDB_KUINT32 | RDB_KINT64 | RDB_KUINT64 | RDB_KINT128 | RDB_KUINT128 | RDB_KTMA | RDB_KTME | RDB_K4U32A
-// for fifos and stuff
-//#define RDB_NOKEYS (RDB_KFIFO | RDB_KLIFO
-
 #define RDB_KFIFO   (1 << 0 )   // No key - make a FIFO in essence. uses one BPP_t 
 #define RDB_KLIFO   (1 << 1 )   // No key - make a LIFO / stack in essence. uses one BPP_t 
 #define RDB_KCF     (1 << 2 )   // use custom function to check index order. key type N/A
@@ -32,10 +28,10 @@
 // Sorting order
 #define RDB_KASC	(1 << 27)	// Key is sorted n ascending sequance
 #define RDB_KDEC	(1 << 28)	// Key is worted in descending sequance
-// Dara pool type (tree, list or fifo for now ... skip-lists planned)
+// Data pool type (tree, list or fifo for now ... skip-lists planned)
 #define RDB_BTREE	(1 << 29) //16384	// use btree for key/index - we always use AVL now.
 #define RDB_LIST	(1 << 30) //32768	// use linked list for key storage
-#define RDB_FIFO    (1 << 31) // FIFO - no Index
+#define RDB_NO_IDX  (1 << 31) // FIFO or LIFO - no Index
 
 
 #define RDB_KEYS (RDB_KPSTR | RDB_KSTR | RDB_KINT8 | RDB_KUINT8 | RDB_KINT16 | \
@@ -126,7 +122,7 @@ typedef struct RDB_POOLS {
     void   			*prev;
 
     // ID number of pool - think of it as a pool handle
-    unsigned int 	id;
+    // unsigned int 	id;
 
     // Number of indexs this data poll have
     unsigned char 	indexCount;
@@ -156,23 +152,23 @@ int rdbRegisterIdxNew(int hdl,  int idx, int segment, int keyOffset, int FLAGS) 
 int rdb_register_um_idx(rdb_pool_t *,  int idx, int keyOffset, int FLAGS, void *) ;
 int findPoolIdByName (char *poolName);
 rdb_pool_t *findPoolAddressIdByName (char *poolName);
-int rdb_insert(int id, void *data);
-int rdbInsertOne (int id, int index, void *data);
-int rdbDeleteOne (int id, int index, void *data);
-void rdbDump(int id, int index);
-void *rdbDelete(int id, int idx, void *data);
-void *rdbGet(int id, int index , void *data) ;
-void *rdbGetNeigh (int id, int idx, void *data, void **before, void **after) ;
+int rdb_insert(rdb_pool_t *, void *data);
+int rdbInsertOne (rdb_pool_t *, int index, void *data);
+int rdbDeleteOne (rdb_pool_t *, int index, void *data);
+void rdbDump(rdb_pool_t *, int index);
+void *rdbDelete(rdb_pool_t *, int idx, void *data);
+void *rdbGet(rdb_pool_t *, int index , void *data) ;
+void *rdbGetNeigh (rdb_pool_t *, int idx, void *data, void **before, void **after) ;
 void rdbInit(void);
-void rdbIterateDelete(int id, int idx, int fn(void *, void *), void *fn_data, void del_fn(void *,
+void rdbIterateDelete(rdb_pool_t *, int idx, int fn(void *, void *), void *fn_data, void del_fn(void *,
                       void *), void *del_data) ;
-void rdbFlush( int id, void fn( void *, void *), void *fn_data);
+void rdbFlush( rdb_pool_t *, void fn( void *, void *), void *fn_data);
 void rdb_clean(void);
-int rdbLock(int id);
-int rdbUnlock(int id);
+int rdbLock(rdb_pool_t *);
+int rdbUnlock(rdb_pool_t *);
 
 void rdb_init(void);
-void _rdbDump (int id, int index, void *start);
+void _rdbDump (rdb_pool_t *, int index, void *start);
 
 int keyCompareNull (void *old, void *);
 int keyCompareString (char *old, char *);
