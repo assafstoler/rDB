@@ -1,7 +1,8 @@
-/**case RDB_KFIFO:case RDB_KLIFO:
+/*
  * @file rDB.c
  *
- * @brief Kernel module for rDB Ram DB - tree, list, and id services.
+ * @brief Kernel module / userspace library
+ * for rDB Ram DB - tree, list, and id services.
  *
  * @par Module:
  *
@@ -20,10 +21,9 @@
  *
  */
 
-#undef DEBUG
-//#define KM
 #ifdef KM
 // Build a Kernel Module
+
 #include <linux/kernel.h>
 #include <linux/version.h>
 #include <linux/module.h>
@@ -37,6 +37,9 @@
 #include <linux/vmalloc.h>
 #include "rDB.h"
 
+#define rdb_free(a) kfree(a)
+#define rdb_alloc(a) kmalloc (a, GFP_KERNEL);
+
 #else
 // Build a UserSpace Library
 
@@ -44,111 +47,108 @@
 #include <stdlib.h>                             //exit,
 #include <string.h>                             //strcmp,
 #include "rDB.h"
+#include <pthread.h>
+
+#define rdb_free(a) free(a)
+#define rdb_alloc(a) malloc (a);
 
 #endif
 
-#include <pthread.h>
-
-#undef DEBUG
 // List of all rDB data pools
-#define PP_T  bpp_t
+ 
+#define PP_T  rdb_bpp_t
 
 
 /*typedef struct RDB_INDEX_DATA {
     int     segments;
-    int     **keyOffset;                        ///< we'll need a key offset for every index segment, so it must be dynamically allocated
+    int     **key_offset;                        ///< we'll need a key offset for every index segment, so it must be dynamically allocated
     int     **flags;                            ///< flags for this pool (index head) or flags for this index continuation (field type)
 } rdb_index_data_t;
 */
 
 
-rdb_pool_t  *poolRoot;
+rdb_pool_t  *pool_root;
 
 
-int     poolIdLow = 0;
-int     poolIdHigh = -1;
-int     poolCount = 0;
 struct  RDB_POOLS **poolIds;
 
 #ifdef KM
-struct RDB_POOLS **poolIdsTmp;
+struct 	RDB_POOLS **poolIdsTmp;
 #endif
 
-char   *rdbErrorString = NULL;
+char   	*rdb_error_string = NULL;
+
 //#define DEBUG
 #ifdef DEBUG
 #ifdef KM
-#define printout(b,arg...) printk(b,##arg)
+#define debug(b,arg...) printk(b,##arg)
 #else
-#define printout(b,arg...) do { fprintf(stdout,b,##arg); fflush(stdout); } while (0)
+#define debug(b,arg...) do { fprintf(stdout,b,##arg); fflush(stdout); } while (0)
 #endif
 #else
-#define printout(b,arg...)
+#define debug(b,arg...)
 #endif
 
 #ifdef KM
-#define printoutalways(b,arg...) printk(b,##arg)
+#define info(b,arg...) printk(b,##arg)
 #else
-#define printoutalways(b,arg...) do { fprintf(stdout,b,##arg); fflush(stdout); } while (0)
+#define info(b,arg...) do { fprintf(stdout,b,##arg); fflush(stdout); } while (0)
 #endif
-#undef DEBUG
+
+
+
 pthread_mutex_t reg_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /// Initilize the rDB subsystem, need to be called once before any other rDB function
 void rdbInit (void)
 {
-
-    poolRoot   = NULL;
-    poolIds    = NULL;
-    poolIdLow  = 0;
-    poolIdHigh = -1;
-    poolCount  = 0;
+    pool_root = NULL;
 }
 
-int rdbErrorValue (int rv, char *err)
+int rdb_error_value (int rv, char *err)
 {
 #ifdef KM
 
-    if (rdbErrorString != NULL)
-        kfree (rdbErrorString);
+    if (rdb_error_string != NULL)
+        kfree (rdb_error_string);
 
-    rdbErrorString = kmalloc (strlen (err) + 1, GFP_KERNEL);
+    rdb_error_string = kmalloc (strlen (err) + 1, GFP_KERNEL);
 #else
-    rdbErrorString = realloc (rdbErrorString, strlen (err) + 1);
+    rdb_error_string = realloc (rdb_error_string, strlen (err) + 1);
 #endif
 
-    if (rdbErrorString == NULL)
-        printoutalways ("rdb: failed to Alloc RAM for error message, original error was \"%s\"\n", err);
+    if (rdb_error_string == NULL)
+        info ("rdb: failed to Alloc RAM for error message, original error was \"%s\"\n", err);
     else
-        strcpy (rdbErrorString, err);
+        strcpy (rdb_error_string, err);
 
     return rv;
 }
 
-void rdbError (char *err)
+void rdb_error (char *err)
 {
 #ifdef KM
 
-    if (rdbErrorString != NULL)
-        kfree (rdbErrorString);
+    if (rdb_error_string != NULL)
+        kfree (rdb_error_string);
 
-    rdbErrorString = kmalloc (strlen (err) + 1, GFP_KERNEL);
+    rdb_error_string = kmalloc (strlen (err) + 1, GFP_KERNEL);
 #else
-    rdbErrorString = realloc (rdbErrorString, strlen (err) + 1);
+    rdb_error_string = realloc (rdb_error_string, strlen (err) + 1);
 #endif
 
-    if (rdbErrorString == NULL)
-        printoutalways ("rdb: failed to Alloc RAM for error message, original error was \"%s\"\n", err);
+    if (rdb_error_string == NULL)
+        info ("rdb: failed to Alloc RAM for error message, original error was \"%s\"\n", err);
     else
-        strcpy (rdbErrorString, err);
+        strcpy (rdb_error_string, err);
 }
 
-rdb_pool_t *findPoolAddressIdByName (char *poolName)
+rdb_pool_t *rdb_find_pool_by_name (char *poolName)
 {
     rdb_pool_t *pool;
 
-    if (poolCount != 0) {
-        pool = poolRoot;
+    if (pool_root != NULL) {
+        pool = pool_root;
 
         while (pool != NULL) {
             if (strcmp (pool->name, poolName) == 0)
@@ -160,253 +160,160 @@ rdb_pool_t *findPoolAddressIdByName (char *poolName)
 
     return (NULL);
 }
-int findPoolIdByName (char *poolName)
-{
-    rdb_pool_t *pool;
-
-    if (poolCount != 0) {
-        pool = poolRoot;
-
-        while (pool != NULL) {
-            if (strcmp (pool->name, poolName) == 0)
-                return (pool->id);
-
-            pool = pool->next;
-        }
-    }
-
-    return (-1);
-}
 
 /// Add a new pool to our pool chain
-int addPool (char *poolName, int indexCount, int keyOffset, int FLAGS, void *fn)
+rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset, int FLAGS, void *compare_fn)
 {
-    int     i;
     rdb_pool_t *pool;
 
-#ifdef KM
-    pool = kmalloc (sizeof (rdb_pool_t), GFP_KERNEL);
-#else
-    pool = malloc (sizeof (rdb_pool_t));
-#endif
+    pool = rdb_alloc (sizeof (rdb_pool_t));
 
     if (pool == NULL) {
-        rdbError ("pool allocation error, out of memory");
-        return (-1);
+        rdb_error ("FATAL: Pool allocation error, out of memory");
+        return NULL;
     }
 
-    memset (pool, 0, sizeof (struct RDB_POOLS));
-    // inserting myself to the top of the pool, why? because it is easy, don't need to look for the end of the pool chain
-    pool->next = poolRoot;
+    memset (pool, 0, sizeof (rdb_pool_t));
 
-    if (poolRoot)
-        poolRoot->prev = pool;
+    // inserting myself to the top of the pool, why? 
+    // because it is easy, don't need to look for the end of the pool chain
+    pool->next = pool_root;
 
-    poolRoot = pool;
-#ifdef KM
-    pool->name = kmalloc (strlen (poolName) + 1, GFP_KERNEL);
-#else
-    pool->name = malloc (strlen (poolName) + 1);
-#endif
+    if (pool_root)
+        pool_root->prev = pool;
+
+    pool_root = pool;
+    pool->name = rdb_alloc (strlen (poolName) + 1);
 
     if (pool->name == NULL) {
-        rdbError ("pool allocation error, out of memory (pool name)");
-        poolRoot = pool->next;
-#ifdef KM
-        kfree (pool);
-#else
-        free (pool);
-#endif
-        return (-1);
+        rdb_error ("FATAL: pool allocation error, out of memory (pool name)");
+        pool_root = pool->next;
+        rdb_free (pool);
+        return NULL;
     }
 
     strcpy (pool->name, poolName);
     
-    if (fn) pool->fn[0] = fn;
-    else if (FLAGS & RDB_KINT32) pool->fn[0] = keyCompareInt32;
-    else if (FLAGS & RDB_KUINT32) pool->fn[0] = keyCompareUInt32;
-    else if (FLAGS & RDB_KINT64) pool->fn[0] = keyCompareInt64;
-    else if (FLAGS & RDB_KUINT64) pool->fn[0] = keyCompareUInt64;
-    else if (FLAGS & RDB_KINT16) pool->fn[0] = keyCompareInt16;
-    else if (FLAGS & RDB_KUINT16) pool->fn[0] = keyCompareUInt16;
-    else if (FLAGS & RDB_KINT8) pool->fn[0] = keyCompareInt8;
-    else if (FLAGS & RDB_KUINT8) pool->fn[0] = keyCompareUInt8;
-    else if (FLAGS & RDB_KINT128) pool->fn[0] = keyCompareInt128;
-    else if (FLAGS & RDB_KUINT128) pool->fn[0] = keyCompareUInt128;
-    else if (FLAGS & RDB_KSTR) pool->fn[0] = keyCompareString;
-    else if (FLAGS & RDB_KPSTR) pool->fn[0] = keyCompareString; //TODO is thsi right ? we shall see
-    else if (FLAGS & RDB_KTME) pool->fn[0] = keyCompareTME;
-    else if (FLAGS & RDB_KTMA) pool->fn[0] = keyCompareTMA;
-    else if (FLAGS & (RDB_NOKEYS)) pool->fn[0] = NULL; //keyCompareNull; // no need. this is a keyless index / list
-    //else if (FLAGS & RDB_K4U32A) pool->fn[0] = keyCompare4U32A;
+    if (compare_fn)                 pool->fn[0] = compare_fn;
+    else if (FLAGS & RDB_KINT32)    pool->fn[0] = keyCompareInt32;
+    else if (FLAGS & RDB_KUINT32)   pool->fn[0] = keyCompareUInt32;
+    else if (FLAGS & RDB_KINT64)    pool->fn[0] = keyCompareInt64;
+    else if (FLAGS & RDB_KUINT64)   pool->fn[0] = keyCompareUInt64;
+    else if (FLAGS & RDB_KINT16)    pool->fn[0] = keyCompareInt16;
+    else if (FLAGS & RDB_KUINT16)   pool->fn[0] = keyCompareUInt16;
+    else if (FLAGS & RDB_KINT8)     pool->fn[0] = keyCompareInt8;
+    else if (FLAGS & RDB_KUINT8)    pool->fn[0] = keyCompareUInt8;
+    else if (FLAGS & RDB_KINT128)   pool->fn[0] = keyCompareInt128;
+    else if (FLAGS & RDB_KUINT128)  pool->fn[0] = keyCompareUInt128;
+    else if (FLAGS & RDB_KSTR)      pool->fn[0] = keyCompareString;
+    else if (FLAGS & RDB_KPSTR)     pool->fn[0] = keyCompareString; //TODO is this right ? we shall see
+    //else if (FLAGS & RDB_KTME)    pool->fn[0] = keyCompareTME;
+    //else if (FLAGS & RDB_KTMA)    pool->fn[0] = keyCompareTMA;
+    else if (FLAGS & RDB_NOKEYS)    pool->fn[0] = NULL;
     else {
-        rdbError ("RDB Fatal: pool registration without type or matching compare fn");
-        poolRoot = pool->next;
-#ifdef KM
-        kfree (pool);
-#else
-        free (pool);
-#endif
-        return (-1);
+        rdb_error ("RDB Fatal: pool registration without type or matching compare fn");
+        pool_root = pool->next;
+        rdb_free (pool);
+        return NULL;
     }
 
-    if (poolIdHigh - poolIdLow + 1 == poolCount) {
-#ifdef DEBUG
-        printout ("master size is %d\n", sizeof (struct RDB_POOLS *) * (poolCount + 1));
-#endif
-        pool->id = 1 + (poolIdHigh++);
-
-        if (poolIdHigh == 0 && poolIdLow == -1)
-            poolIdLow = 0;
-
-        poolCount++;
-#ifdef KM
-        poolIdsTmp = kmalloc (sizeof (struct RDB_POOLS **) * (poolCount), GFP_KERNEL);
-
-        if (poolCount > 0)
-            memcpy (poolIdsTmp, poolIds, sizeof (struct RDB_POOLD *) * (poolCount - 1));
-
-        if (NULL != poolIds) kfree (poolIds);
-
-        poolIds = poolIdsTmp;
-#else
-        poolIds = realloc (poolIds, sizeof (struct RDB_POOLS **) * (poolCount));
-#endif
-    }
-    else {
-        // we have a hole, lets find it)
-        for (i = poolIdLow; i < poolIdHigh; i++) {
-            if (poolIds[i] == NULL) {
-                // found an empty ID, lets use
-                pool->id = i;
-                break;
-            }
-        }
-    }
-
-    poolIds[pool->id] = pool;
     pool->root[0] = NULL;
-    pool->keyOffset[0] = sizeof (PP_T) * indexCount + keyOffset;
-#ifdef DEBUG
-    printout ("pool->keyOffset=%d\n", pool->keyOffset[0]);
-#endif
+    pool->key_offset[0] = sizeof (PP_T) * indexCount + key_offset;
+    debug ("pool->key_offset=%d\n", pool->key_offset[0]);
     pool->indexCount = indexCount;
     pool->FLAGS[0] = FLAGS;
-#ifdef DEBUG
-    printout ("pool %s, FLAGS=%xn", pool->name, pool->FLAGS[0]);
-#endif
+    debug ("pool %s, FLAGS=%xn", pool->name, pool->FLAGS[0]);
+    pthread_mutex_init(&pool->read_mutex, NULL); 
     pthread_mutex_init(&pool->write_mutex, NULL); 
 
-    return (pool->id);
+    return pool;
 }
 
-/// Register data pool with rDB, returnd a pool ID handler to be used with future function calls
-// KeyOffset is the offset form the start ou the user data, ignoring the pp_t[] at the start of the structure - however it is calculated and stored as offset from the top of the structure.
-int rdb_register_um_pool (char *poolName, int idxCount, int keyOffset, int FLAGS, void *fn)
-{
-    int rc;
+// Register data pool with rDB, returns a pool handler to be used with future
+// function calls.
+// key_offset is the offset form the start of the user data, ignoring the pp_t[]
+// at the start of the structure - however it is calculated and stored as offset
+// from the top of the structure.
 
-    pthread_mutex_lock(&reg_mutex);
-    if (findPoolIdByName (poolName) != -1) {
-        rdbError ("trying to register an existing pool name");
-        return (-1);
-    }
-
-    rc = addPool (poolName, idxCount, keyOffset, FLAGS, fn);
-    pthread_mutex_unlock(&reg_mutex);
-
-    return rc;
-
-}
-
-void rdbClean(void)
-{
-    rdb_pool_t *pool, *poolNext;
-
-    if (poolCount != 0) {
-        pool = poolRoot;
-
-        while (pool != NULL) {
-            poolNext = pool->next;
-#ifdef KM
-            kfree (pool->name);
-            kfree (pool);
-#else
-            free (pool->name);
-            free (pool);
-#endif
-            pool = poolNext;
-        }
-    }
-
-#ifdef KM
-
-    if (NULL != poolIds) kfree (poolIds);
-
-#else
-
-    if (NULL != poolIds) free (poolIds);
-
-#endif
-    poolIdLow = 0;
-    poolIdHigh = -1;
-    poolCount = 0;
-    poolIds = NULL;
-    poolRoot   = NULL;
-    return ;
-}
-
-int rdb_register_um_idx (int hdl, int idx, int keyOffset, int FLAGS, void *fn)
+rdb_pool_t *rdb_register_um_pool (char *poolName, 
+	int idxCount, int key_offset, int FLAGS, void *fn)
 {
     rdb_pool_t *pool;
 
     pthread_mutex_lock(&reg_mutex);
+
+    if (rdb_find_pool_by_name (poolName) != NULL) {
+        rdb_error ("FATAL: Attempt to register an existing rdb pool (by name)");
+        pool = NULL;
+    } else {
+        pool = rdb_add_pool (poolName, idxCount, key_offset, FLAGS, fn);
+    }
+    pthread_mutex_unlock(&reg_mutex);
+
+    return pool;
+}
+
+void rdb_clean(void) {
+    rdb_pool_t *pool, *pool_next;
+
+    if (pool_root != NULL) {
+        pool = pool_root;
+
+        while (pool != NULL) {
+            pool_next = pool->next;
+            rdb_free (pool->name);
+            rdb_free (pool);
+            pool = pool_next;
+        }
+    }
+
+    pool_root = NULL;
+    return ;
+}
+
+int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
+        int FLAGS, void *compare_fn) {
+    pthread_mutex_lock(&reg_mutex);
     if (idx == 0)
-        return (rdbErrorValue (-1, "Index 0 (zero) can only be set via rdbRegisterPool"));
+        return (rdb_error_value (-1, 
+            "Index 0 (zero) can only be set via rdb_register_pool"));
 
     if (idx >= RDB_POOL_MAX_IDX)
-        return (rdbErrorValue (-2, "Index >= RDB_INDEX_MAX_IDX"));
-
-    pool = poolIds[hdl];
+        return (rdb_error_value (-2, "Index >= RDB_INDEX_MAX_IDX"));
 
     if (pool->FLAGS[idx] != 0)
-        return (rdbErrorValue (-3, "Redefinition of used index not allowed"));
+        return (rdb_error_value (-3, "Redefinition of used index not allowed"));
 
-    if (fn) pool->fn[idx] = fn;
-    else if (FLAGS & RDB_KINT32) pool->fn[idx] = keyCompareInt32;
-    else if (FLAGS & RDB_KUINT32) pool->fn[idx] = keyCompareUInt32;
-    else if (FLAGS & RDB_KINT64) pool->fn[idx] = keyCompareInt64;
-    else if (FLAGS & RDB_KUINT64) pool->fn[idx] = keyCompareUInt64;
-    else if (FLAGS & RDB_KINT16) pool->fn[idx] = keyCompareInt16;
-    else if (FLAGS & RDB_KUINT16) pool->fn[idx] = keyCompareUInt16;
-    else if (FLAGS & RDB_KINT8) pool->fn[idx] = keyCompareInt8;
-    else if (FLAGS & RDB_KUINT8) pool->fn[idx] = keyCompareUInt8;
-    else if (FLAGS & RDB_KINT128) pool->fn[idx] = keyCompareInt128;
-    else if (FLAGS & RDB_KUINT128) pool->fn[idx] = keyCompareUInt128;
-    else if (FLAGS & RDB_KSTR) pool->fn[idx] = keyCompareString;
-    else if (FLAGS & RDB_KPSTR) pool->fn[idx] = keyCompareString; //TODO is thsi right ?
-    else if (FLAGS & RDB_KTME) pool->fn[idx] = keyCompareTME;
-    else if (FLAGS & RDB_KTMA) pool->fn[idx] = keyCompareTMA;
-    else if (FLAGS & (RDB_NOKEYS)) pool->fn[idx] = NULL; //keyCompareNull; // no need. this is a keyless index / list
-    //else if (FLAGS & RDB_K4U32A) pool->fn[idx] = keyCompare4U32A;
+    if (compare_fn)                 pool->fn[idx] = compare_fn;
+    else if (FLAGS & RDB_KINT32)    pool->fn[idx] = keyCompareInt32;
+    else if (FLAGS & RDB_KUINT32)   pool->fn[idx] = keyCompareUInt32;
+    else if (FLAGS & RDB_KINT64)    pool->fn[idx] = keyCompareInt64;
+    else if (FLAGS & RDB_KUINT64)   pool->fn[idx] = keyCompareUInt64;
+    else if (FLAGS & RDB_KINT16)    pool->fn[idx] = keyCompareInt16;
+    else if (FLAGS & RDB_KUINT16)   pool->fn[idx] = keyCompareUInt16;
+    else if (FLAGS & RDB_KINT8)     pool->fn[idx] = keyCompareInt8;
+    else if (FLAGS & RDB_KUINT8)    pool->fn[idx] = keyCompareUInt8;
+    else if (FLAGS & RDB_KINT128)   pool->fn[idx] = keyCompareInt128;
+    else if (FLAGS & RDB_KUINT128)  pool->fn[idx] = keyCompareUInt128;
+    else if (FLAGS & RDB_KSTR)      pool->fn[idx] = keyCompareString;
+    else if (FLAGS & RDB_KPSTR)     pool->fn[idx] = keyCompareString; //TODO is thsi right ?
+//    else if (FLAGS & RDB_KTME)    pool->fn[idx] = keyCompareTME;
+//    else if (FLAGS & RDB_KTMA)    pool->fn[idx] = keyCompareTMA;
+    else if (FLAGS & (RDB_NOKEYS))  pool->fn[idx] = NULL;
+    //else if (FLAGS & RDB_K4U32A)  pool->fn[idx] = keyCompare4U32A;
     else {
-        return (rdbErrorValue (-4, "Index Registration without valid type or compatr fn"));
+        return (rdb_error_value (-4,
+            "Index Registration without valid type or compatr fn"));
     }
 
     pool->root[idx] = NULL;
-    pool->keyOffset[idx] = sizeof (PP_T) * pool->indexCount + keyOffset;
+    pool->key_offset[idx] = sizeof (PP_T) * pool->indexCount + key_offset;
     pool->FLAGS[idx] = FLAGS;
-#ifdef DEBUG
-    printout ("registered index %d for pool %d, Keyoffset is %d\n", idx, hdl, keyOffset);
-#endif
+    debug ("registered index %d for pool %d, Keyoffset is %d\n", idx, hdl, key_offset);
     pthread_mutex_unlock(&reg_mutex);
     return (idx);
 }
 
-int keyCompareNull (void *old, void *new)
-{
-    return 0; 
-}
 int keyCompareInt32 (int32_t *old, int32_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); // 8% lookup boost :)
@@ -447,20 +354,21 @@ int keyCompareUInt128 (__uint128_t *old, __uint128_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
+//TODO add 256 bit types
 
 int keyCompareString (char *old, char *new)
 {
     return strcmp ( new, old);
 }
-int keyCompareTME (struct timeval *key, struct timeval *keyNew)
+/*int keyCompareTME (struct timeval *key, struct timeval *keyNew)
 {
     if (keyNew->tv_sec != key->tv_sec) return ((keyNew->tv_sec < key->tv_sec) ? -1 : 1);
 
     if (keyNew->tv_usec != key->tv_sec) return ((keyNew->tv_usec < key->tv_usec) ? -1 : 1);
     return 0;
-}
+}*/
 
-int keyCompareTMA (TVA *key, TVA *keyNew)
+/*int keyCompareTMA (TVA *key, TVA *keyNew)
 {
     if (keyNew->tv.tv_sec != key->tv.tv_sec) return ((keyNew->tv.tv_sec <
                         key->tv.tv_sec) ? -1 : 1);
@@ -468,105 +376,20 @@ int keyCompareTMA (TVA *key, TVA *keyNew)
                         key->tv.tv_usec) ? -1 : 1);
     if (keyNew->acc != key->acc) return ((keyNew->acc < key->acc) ? -1 : 1);
     return 0;
-}
+}*/
 
 //TODO have function accept union -save assignment
-#ifdef _OUT
-int keyCompare (rdb_pool_t *pool, int index, void *old, void *new, int direct, int partial)
-{
-    rdbKeyUnion  *key,
-                 *keyNew;
 
-    key = old;
-    keyNew = new;
-
-    //switch (pool->FLAGS[index] & (RDB_KPSTR | RDB_KSTR | RDB_KINT | RDB_KLONG  | RDB_KU32 | RDB_KLLONG | RDB_KTMA | RDB_KTME | RDB_K4U32A))
-    switch (pool->FLAGS[index] & (RDB_KEYS)) {
-        case RDB_KPSTR:
-            if (!direct)
-                return strcmp (keyNew->pStr, key->pStr);    // if direct string, slide to next case
-            else
-                return strcmp (&keyNew->str, key->pStr);    // if direct string, slide to next case
-
-        case RDB_KSTR:
-            return strcmp ( &keyNew->str, &key->str);
-
-            //        printout ("KeyComp:str: testing %s against %s\n", &keyNew->str, &key->str);
-        case RDB_KINT8:
-            return (keyNew->i8 == key->i8) ? 0 : ((keyNew->i8 < key->i8) ? -1 : 1);
-
-        case RDB_KINT16:
-            return (keyNew->i16 == key->i16) ? 0 : ((keyNew->i16 < key->i16) ? -1 : 1);
-
-        case RDB_KINT32:
-            return (keyNew->i32 == key->i32) ? 0 : ((keyNew->i32 < key->i32) ? -1 : 1);
-
-        case RDB_KINT64:
-            return (keyNew->i64 == key->i64) ? 0 : ((keyNew->i64 < key->i64) ? -1 : 1);
-
-        case RDB_KUINT8:
-            return (keyNew->u8 == key->u8) ? 0 : ((keyNew->u8 < key->u8) ? -1 : 1);
-
-        case RDB_KUINT16:
-            return (keyNew->u16 == key->u16) ? 0 : ((keyNew->u16 < key->u16) ? -1 : 1);
-
-        case RDB_KUINT32:
-            return (keyNew->u32 == key->u32) ? 0 : ((keyNew->u32 < key->u32) ? -1 : 1);
-
-        case RDB_KUINT64:
-            return (keyNew->u64 == key->u64) ? 0 : ((keyNew->u64 < key->u64) ? -1 : 1);
-
-        case RDB_KUINT128:
-            return (keyNew->u128 == key->u128) ? 0 : ((keyNew->u128 < key->u128) ? -1 : 1);
-
-        case RDB_KTME:
-            if (keyNew->tv.tv_sec != key->tv.tv_sec) return ((keyNew->tv.tv_sec < key->tv.tv_sec) ? -1 : 1);
-
-            if (keyNew->tv.tv_usec != key->tv.tv_sec) return ((keyNew->tv.tv_usec < key->tv.tv_usec) ? -1 : 1);
-
-        case RDB_KTMA:
-            if (keyNew->tva.tv.tv_sec != key->tva.tv.tv_sec) return ((keyNew->tva.tv.tv_sec <
-                        key->tva.tv.tv_sec) ? -1 : 1);
-
-            if (keyNew->tva.tv.tv_usec != key->tva.tv.tv_usec) return ((keyNew->tva.tv.tv_usec <
-                        key->tva.tv.tv_usec) ? -1 : 1);
-
-            if (keyNew->tva.acc != key->tva.acc) return ((keyNew->tva.acc < key->tva.acc) ? -1 : 1);
-
-            return 0;
-
-/*        case RDB_K4U32A: // 4 longs , last is accumulator
-            if (partial) return  (keyNew->u32a.l1 == key->u32a.l1) ?
-                                     ((keyNew->u32a.l2 == key->u32a.l2) ?
-                                      ((keyNew->u32a.l3 == key->u32a.l3) ? 0 :
-                                       ((keyNew->u32a.l3 < key->u32a.l3) ? -1 : 1)) :
-                                          ((keyNew->u32a.l2 < key->u32a.l2) ? -1 : 1 )) :
-                                         ((keyNew->u32a.l1 < key->u32a.l1) ? -1 : 1);
-            else return  (keyNew->u32a.l1 == key->u32a.l1) ?
-                             ((keyNew->u32a.l2 == key->u32a.l2) ?
-                              ((keyNew->u32a.l3 == key->u32a.l3) ?
-                               ((keyNew->u32a.acc == key->u32a.acc) ? 0 :
-                                ((keyNew->u32a.acc < key->u32a.acc) ? -1 : 1)) :
-                                   ((keyNew->u32a.l3 < key->u32a.l3) ? -1 : 1)) :
-                                  ((keyNew->u32a.l2 < key->u32a.l2) ? -1 : 1 )) :
-                                 ((keyNew->u32a.l1 < key->u32a.l1) ? -1 : 1);
-*/
-        default:                                   // can not be... well, now can be if key is FIFO or LIFO ... since there is no key - always match
-            return 0;
-    }
-}
-#endif 
-//#define DEBUG
 #ifdef DEBUG
 int keyCompDebug (rdb_pool_t *pool, int index, void *old, void *new)
 {
-    rdbKeyUnion  *key,
+    rdb_key_union  *key,
                  *keyNew;
     key = old;
     keyNew = new;
-    printoutalways ("pool %s, Add_a: %x : %x\n", pool->name, (unsigned long) old, (unsigned long) new);
-    printoutalways ("pool %s, Add_b: %x : %x\n", pool->name, (unsigned long) keyNew, (unsigned long) key);
-    printoutalways ("pool %s, FLAGS=%xn", pool->name, pool->FLAGS[index]);
+    info ("pool %s, Add_a: %x : %x\n", pool->name, (unsigned long) old, (unsigned long) new);
+    info ("pool %s, Add_b: %x : %x\n", pool->name, (unsigned long) keyNew, (unsigned long) key);
+    info ("pool %s, FLAGS=%xn", pool->name, pool->FLAGS[index]);
 
     switch (pool->FLAGS[index] & (RDB_KEYS)) {
         case RDB_KPSTR:
@@ -649,6 +472,7 @@ int keyCompDebug (rdb_pool_t *pool, int index, void *old, void *new)
 
 int     levels,
         maxLevels;
+
 #ifdef DEBUG
 inline void setPointers (rdb_pool_t *pool, int index, void *start, PP_T ** ppk, void **dataHead)
 #else
@@ -670,7 +494,7 @@ void _rdbDump (int id, int index, void *start)
     PP_T   *pp;
     rdb_pool_t *pool;
 
-    rdbKeyUnion *key;
+    rdb_key_union *key;
 
     pool = poolIds[id];
 
@@ -694,7 +518,7 @@ void _rdbDump (int id, int index, void *start)
             pp = start + (sizeof (PP_T) * index);
         }
 
-        key = (void *) searchNext + pool->keyOffset[index];
+        key = (void *) searchNext + pool->key_offset[index];
 
         if (pp->left != NULL) {
             _rdbDump (id, index, pp->left);
@@ -704,54 +528,54 @@ void _rdbDump (int id, int index, void *start)
         switch (pool->FLAGS[index] & (RDB_KEYS)) {
             case RDB_KPSTR:
 #ifdef __i386__
-                printoutalways ("Dump_ps: %s (%x)\n", key->pStr, (unsigned) &key->pStr);  //searchPrev);
+                info ("Dump_ps: %s (%x)\n", key->pStr, (unsigned) &key->pStr);  //searchPrev);
 #endif
 #ifdef __x86_64__
-                printoutalways ("Dump_ps: %s (%llx)\n", key->pStr, (unsigned long long) &key->pStr);  //searchPrev);
+                info ("Dump_ps: %s (%llx)\n", key->pStr, (unsigned long long) &key->pStr);  //searchPrev);
 #endif
                 break;
 
             case RDB_KSTR:
-                printoutalways ("Dump_s : %s\n", &key->str);
+                info ("Dump_s : %s\n", &key->str);
                 break;
 
             case RDB_KINT8:
-                printoutalways ("Dump_i8 : %d\n", key->i8);
+                info ("Dump_i8 : %d\n", key->i8);
                 break;
 
             case RDB_KINT16:
-                printoutalways ("Dump_i16 : %d\n", key->i16);
+                info ("Dump_i16 : %d\n", key->i16);
                 break;
 
             case RDB_KINT32:
-                printoutalways ("Dump_i32 : %ld\n", (long) key->i32);
+                info ("Dump_i32 : %ld\n", (long) key->i32);
                 break;
 
             case RDB_KINT64:
-                printoutalways ("Dump_i64 : %lld\n", (long long) key->i64);
+                info ("Dump_i64 : %lld\n", (long long) key->i64);
                 break;
 
             case RDB_KUINT8:
-                printoutalways ("Dump_u8 : %u\n", key->u8);
+                info ("Dump_u8 : %u\n", key->u8);
                 break;
 
             case RDB_KUINT16:
-                printoutalways ("Dump_u16 : %u\n", key->u16);
+                info ("Dump_u16 : %u\n", key->u16);
                 break;
 
             case RDB_KUINT32:
-                printoutalways ("Dump_u32 : %lu\n", (unsigned long) key->u32);
+                info ("Dump_u32 : %lu\n", (unsigned long) key->u32);
                 break;
 
             case RDB_KUINT64:
-                printoutalways ("Dump_u64 : %llu\n", (unsigned long long) key->u64);
+                info ("Dump_u64 : %llu\n", (unsigned long long) key->u64);
                 break;
 
             case RDB_KUINT128:
-                printoutalways ("Dump_u128 : (%llx)\n", (unsigned long long) key->u128);
+                info ("Dump_u128 : (%llx)\n", (unsigned long long) key->u128);
                 break;
 
-            case RDB_KTME:
+ /*           case RDB_KTME:
                 printoutalways ("Dump_TME: %ld:%ld\n", key->tv.tv_sec, key->tv.tv_usec);
                 break;
 
@@ -759,7 +583,7 @@ void _rdbDump (int id, int index, void *start)
                 printoutalways ("Dump_TMA: %lu:%lu.%lu\n", (unsigned long) key->tva.tv.tv_sec,
                                 (unsigned long) key->tva.tv.tv_usec, (unsigned long) key->tva.acc);
                 break;
-
+*/
             /*case RDB_K4U32A:
                 printoutalways ("Dump_4U23A: %lu:%lu:%lu:%lu\n", (unsigned long) key->u32a.l1,
                                 (unsigned long) key->u32a.l2, (unsigned long) key->u32a.l3, (unsigned long) key->u32a.acc);
@@ -778,7 +602,7 @@ void _rdbDump (int id, int index, void *start)
     }
 
     if (start == NULL)
-        printout ("Final Level=%d\n", maxLevels);
+        debug ("Final Level=%d\n", maxLevels);
 
 }
 
@@ -887,10 +711,10 @@ int _rdbInsert (rdb_pool_t *pool, void *data, void *start, int index, void *pare
             ppkNew = data;
             printout ("Datahead: %p, data: %p, ppkNew: %p, start%snull %p ? %p\n", dataHead,
                       data, ppkNew,
-                      (start == NULL) ? "=" : "!=", dataHead + pool->keyOffset[index],
-                      (void *) (ppkNew) + pool->keyOffset[index]);
-            //keyCompDebug (pool, index, dataHead + pool->keyOffset[index],
-            //              (void *) ppkNew + pool->keyOffset[index]);
+                      (start == NULL) ? "=" : "!=", dataHead + pool->key_offset[index],
+                      (void *) (ppkNew) + pool->key_offset[index]);
+            //keyCompDebug (pool, index, dataHead + pool->key_offset[index],
+            //              (void *) ppkNew + pool->key_offset[index]);
 #endif
         }
         else {
@@ -900,14 +724,14 @@ int _rdbInsert (rdb_pool_t *pool, void *data, void *start, int index, void *pare
 #endif
             ppkNew = (void *) data + (sizeof (PP_T) * index);
 #ifdef DEBUG
-            //keyCompDebug (pool, index, dataHead + pool->keyOffset[index],
-            //              (void *) data + pool->keyOffset[index]);
+            //keyCompDebug (pool, index, dataHead + pool->key_offset[index],
+            //              (void *) data + pool->key_offset[index]);
 #endif
 
-            //if ((rc = keyCompare (pool, index, dataHead + pool->keyOffset[index],
-            //                      (void *) data + pool->keyOffset[index], 0, 0)) < 0) {
-            if ((rc = pool->fn[index] (/*pool, index, */dataHead + pool->keyOffset[index],
-                                  (void *) data + pool->keyOffset[index])) < 0) {
+            //if ((rc = keyCompare (pool, index, dataHead + pool->key_offset[index],
+            //                      (void *) data + pool->key_offset[index], 0, 0)) < 0) {
+            if ((rc = pool->fn[index] (/*pool, index, */dataHead + pool->key_offset[index],
+                                  (void *) data + pool->key_offset[index])) < 0) {
                 // left side
                 if (ppk->left == NULL) {
 #ifdef DEBUG
@@ -1121,8 +945,8 @@ int _rdbInsert (rdb_pool_t *pool, void *data, void *start, int index, void *pare
             else {
 #ifdef DEBUG
                 printout ("Skipped due to multiple key on pool %s index %d\n", pool->name, index);
-                //keyCompDebug (pool, index, dataHead + pool->keyOffset[index], /*ppkNew */ data +
-                //              pool->keyOffset[index]);
+                //keyCompDebug (pool, index, dataHead + pool->key_offset[index], /*ppkNew */ data +
+                //              pool->key_offset[index]);
 #endif
                 return (-1);
             }                                   // multiple keys not yet supported!
@@ -1139,95 +963,24 @@ int _rdbInsert (rdb_pool_t *pool, void *data, void *start, int index, void *pare
 // return shoud be the # of updated indexes, which must maych the number of defined indexes, anything less shows an error
 // TODO? should we make this atomic - meaning if one index failes fo insert, delete the previously inserted ones?
 
-int rdbInsert (int id, void *data)
+int rdb_insert (int id, void *data)
 {
     int     indexCount;
     int     rc = 0;
-    int     rc2 = 0;
     rdb_pool_t *pool;
-    union {
-        /*                char   *pStr;
-                        char    str;
-                        int     i;
-                        long    l;
-                        long long ll;
-        */	        struct timeval tv;
-        TVA	tva;
-        U32a	u32a;
-    }      *key;
-
+  
     pool = poolIds[id];
 
     if (data != NULL)
-        for (indexCount = 0; indexCount < pool->indexCount; indexCount++) {
-#ifdef DEBUG
-            printout ("______________________________________________________________\nindert idx %d, root points to %x data %x\n",
-                      indexCount,
-                      (unsigned) pool->root[indexCount], data);
-#endif
-
-            switch (pool->FLAGS[indexCount] & ((RDB_KEYS) + (RDB_NOKEYS))) {
-                case RDB_KPSTR:
-                case RDB_KSTR:
-                case RDB_KINT8:
-                case RDB_KINT16:
-                case RDB_KINT32:
-                case RDB_KINT64:
-                case RDB_KUINT8:
-                case RDB_KUINT16:
-                case RDB_KUINT32:
-                case RDB_KUINT64:
-                case RDB_KUINT128:
-                case RDB_KTME:
-                case RDB_KFIFO:
-                case RDB_KLIFO:
-                case RDB_KCF:
-                    (_rdbInsert (pool, data, pool->root[indexCount] /*NULL*/, indexCount, NULL, 0) < 0) ? rc : rc++;
-                    //	printf("std insert \n");
-                    break;
-
-                case RDB_KTMA:
-
-                    //	printf("TMA insert \n");
-                    //rc2 =_rdbInsert (pool, data, pool->root[indexCount], indexCount, NULL, 0);  // ? rc : rc++;
-                    do {
-                        rc2 = _rdbInsert (pool, data, pool->root[indexCount], indexCount, NULL, 0);
-
-                        if (rc2 < 0 ) {
-                            key = data + pool->keyOffset[indexCount];
-                            key->tva.acc++;
-                        }
-                    }
-                    while (rc2 < 0 );
-
-                    if (rc2 >= 0 ) rc++;
-
-                    break;
-
-                /*case RDB_K4U32A:
-                    do {
-                        rc2 = _rdbInsert (pool, data, pool->root[indexCount], indexCount, NULL, 0);
-
-                        if (rc2 < 0 ) {
-                            key = data + pool->keyOffset[indexCount];
-                            key->u32a.acc++;
-                        }
-                    }
-                    while (rc2 < 0 );
-
-                    if (rc2 >= 0 ) rc++;
-
-                    break;*/
-            }
-
-            //(_rdbInsert (pool, data, pool->root[indexCount] /*NULL*/, indexCount, NULL, 0) < 0) ? rc : rc++;
-        }
+        for (indexCount = 0; indexCount < pool->indexCount; indexCount++) 
+            (_rdbInsert (pool, data, pool->root[indexCount], 
+                indexCount, NULL, 0) < 0) ? rc : rc++;
     else
         rc = -1;
 
     return rc;
 }
-#undef DEBUG
+
 // only insert one index (asuming this index was removed and updated prior).
 int rdbInsertOne (int id, int index, void *data)
 {
@@ -1263,11 +1016,11 @@ void   *_rdbGet (rdb_pool_t *pool, int index, void *data, void *start, int parti
             }
 
 #ifdef DEBUG
-            keyCompDebug (pool, index, dataHead + pool->keyOffset[index], data);
+            keyCompDebug (pool, index, dataHead + pool->key_offset[index], data);
 #endif
-            if ((rc = pool->fn[index] (/*pool, index,*/ dataHead + pool->keyOffset[index],
+            if ((rc = pool->fn[index] (/*pool, index,*/ dataHead + pool->key_offset[index],
                                   (void *) data)) < 0) {
-            //if ((rc = keyCompare (pool, index, dataHead + pool->keyOffset[index], data, 1,
+            //if ((rc = keyCompare (pool, index, dataHead + pool->key_offset[index], data, 1,
             //                      partial)) < 0) {
                 // left side
 #ifdef DEBUG
@@ -1347,12 +1100,12 @@ void   *_rdbGetNeigh (rdb_pool_t *pool, int index, void *data, void *start, int 
             }
 
 #ifdef DEBUG
-            keyCompDebug (pool, index, dataHead + pool->keyOffset[index], data);
+            keyCompDebug (pool, index, dataHead + pool->key_offset[index], data);
 #endif
 
-            if ((rc = pool->fn[index] (/*pool, index,*/ dataHead + pool->keyOffset[index],
+            if ((rc = pool->fn[index] (/*pool, index,*/ dataHead + pool->key_offset[index],
                                   (void *) data)) < 0) {
-            //if ((rc = keyCompare (pool, index, dataHead + pool->keyOffset[index], data, 1,
+            //if ((rc = keyCompare (pool, index, dataHead + pool->key_offset[index], data, 1,
             //                      partial)) < 0) {
                 // left side
 #ifdef DEBUG
@@ -1449,10 +1202,10 @@ rfeStart:
         }
         else {
             if (*resumePtr != NULL) {
-                if ((pool->fn[index] (/*pool, index,*/ dataHead + pool->keyOffset[index],
-                                  (void *) resumePtr + pool->keyOffset[index])) < 0) {
-                //if ( keyCompare (pool, index, dataHead + pool->keyOffset[index],
-                //                 *resumePtr + pool->keyOffset[index], 0, 0) < 0) {
+                if ((pool->fn[index] (/*pool, index,*/ dataHead + pool->key_offset[index],
+                                  (void *) resumePtr + pool->key_offset[index])) < 0) {
+                //if ( keyCompare (pool, index, dataHead + pool->key_offset[index],
+                //                 *resumePtr + pool->key_offset[index], 0, 0) < 0) {
                     //printoutalways("->left\n");
                     if ( 1 == ( 1 & (rc =  _rdbForEach (pool, index, fn, data, del_fn, delfn_data, pp->left, start,
                                                         RDB_TREE_LEFT, resumePtr)))) { // tree may have been modified
@@ -1558,8 +1311,8 @@ rfeStart:
                     for (indexCount = 0; indexCount < pool->indexCount;
                             indexCount++) if (pool->FLAGS[indexCount] &
                                                   RDB_KPSTR) { //we have an index which is a pointer, need to free it too.
-                            dataField = dataHead + pool->keyOffset[indexCount];
-                            //                    printoutalways("off = %d add %x, str %s\n",pool->keyOffset[indexCount],(unsigned) *dataField, *dataField);
+                            dataField = dataHead + pool->key_offset[indexCount];
+                            //                    printoutalways("off = %d add %x, str %s\n",pool->key_offset[indexCount],(unsigned) *dataField, *dataField);
 #ifdef KM
 
                             if (*dataField) kfree(*dataField);
@@ -1667,8 +1420,8 @@ void _rdbFlush( rdb_pool_t *pool, void *start, void fn( void *, void *), void *f
             for (indexCount = 0; indexCount < pool->indexCount;
                     indexCount++) if (pool->FLAGS[indexCount] &
                                           RDB_KPSTR) { //we have an index which is a pointer, need to free it too.
-                    dataField = dataHead + pool->keyOffset[indexCount];
-                    //                printoutalways("off = %d add %x, str %s\n",pool->keyOffset[indexCount],(unsigned) *dataField, *dataField);
+                    dataField = dataHead + pool->key_offset[indexCount];
+                    //                printoutalways("off = %d add %x, str %s\n",pool->key_offset[indexCount],(unsigned) *dataField, *dataField);
 #ifdef KM
 
                     if (*dataField) kfree(*dataField);
@@ -1713,8 +1466,8 @@ void _rdbFlushList( rdb_pool_t *pool, void *start, void fn( void *, void *), voi
                 for (indexCount = 0; indexCount < pool->indexCount;
                         indexCount++) if (pool->FLAGS[indexCount] &
                                               RDB_KPSTR) { //we have an index which is a pointer, need to free it too.
-                        dataField = dataHead + pool->keyOffset[indexCount];
-                        //                printoutalways("off = %d add %x, str %s\n",pool->keyOffset[indexCount],(unsigned) *dataField, *dataField);
+                        dataField = dataHead + pool->key_offset[indexCount];
+                        //                printoutalways("off = %d add %x, str %s\n",pool->key_offset[indexCount],(unsigned) *dataField, *dataField);
 #ifdef KM
 
                         if (*dataField) kfree(*dataField);
@@ -1846,21 +1599,21 @@ int _rdbDeleteByPointer (rdb_pool_t *pool, void *parent, int index, PP_T * ppkDe
         // two children
 #ifdef KM
 #ifdef __i386__
-        printoutalways("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %x %x\nData tree may be corrupt!\n",
+        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %x %x\nData tree may be corrupt!\n",
                        index, (unsigned) ppkDead->left, (unsigned) ppkDead->right);
 #endif
 #ifdef __x86_64__
-        printoutalways("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %llx %llx\nData tree may be corrupt!\n",
+        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %llx %llx\nData tree may be corrupt!\n",
                        index, (unsigned long long) ppkDead->left, (unsigned long long) ppkDead->right);
 #endif
         return 0;
 #else
 #ifdef __i386__
-        printoutalways("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %x %x\n", index,
+        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %x %x\n", index,
                        (unsigned) ppkDead->left, (unsigned) ppkDead->right);
 #endif
 #ifdef __x86_64__
-        printoutalways("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %llx %llx\n",
+        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %llx %llx\n",
                        index, (unsigned long long) ppkDead->left, (unsigned long long) ppkDead->right);
 #endif
         exit(1);
@@ -1898,16 +1651,16 @@ int _rdbDeleteByPointer (rdb_pool_t *pool, void *parent, int index, PP_T * ppkDe
         return 0;
 #else
 #ifdef __x86_64__
-        printoutalways("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %llx %llx\n",
+        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %llx %llx\n",
                        index, (unsigned long long) ppkDead->left, (unsigned long long) ppkDead->right);
-        printoutalways("rdbDeleteByPointer:b: I should never get here ~~~~~!!!!!index = %d, %llx %llx\n",
+        info ("rdbDeleteByPointer:b: I should never get here ~~~~~!!!!!index = %d, %llx %llx\n",
                        index, (unsigned long long) ppkRight->left, (unsigned long long) ppkRight->right);
         exit(1);
 #endif
 #ifdef __i386__
-        printoutalways("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %x %x\n", index,
+        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %x %x\n", index,
                        (unsigned) ppkDead->left, (unsigned) ppkDead->right);
-        printoutalways("rdbDeleteByPointer:b: I should never get here ~~~~~!!!!!index = %d, %x %x\n", index,
+       	info ("rdbDeleteByPointer:b: I should never get here ~~~~~!!!!!index = %d, %x %x\n", index,
                        (unsigned) ppkRight->left, (unsigned) ppkRight->right);
         exit(1);
 #endif
@@ -1987,10 +1740,10 @@ int _rdbDelete (rdb_pool_t *pool, int lookupIndex, void *data, void *start, PP_T
             printout("Delete:before compare: \n");
 #endif
 
-            if ((rc = pool->fn[lookupIndex] (/*pool, lookupIndex,*/ dataHead + pool->keyOffset[lookupIndex],
-                                  (void *) data + (pool->keyOffset[lookupIndex]))) != 0) {
-            //if ((rc = keyCompare (pool, lookupIndex, dataHead + pool->keyOffset[lookupIndex],
-            //                      data + (pool->keyOffset[lookupIndex]), 0, 0)) != 0) {
+            if ((rc = pool->fn[lookupIndex] (/*pool, lookupIndex,*/ dataHead + pool->key_offset[lookupIndex],
+                                  (void *) data + (pool->key_offset[lookupIndex]))) != 0) {
+            //if ((rc = keyCompare (pool, lookupIndex, dataHead + pool->key_offset[lookupIndex],
+            //                      data + (pool->key_offset[lookupIndex]), 0, 0)) != 0) {
 retest_delete_cond:
 #ifdef DEBUG
                 printout("Delete:compare: %d idx %d\n", rc, lookupIndex);
@@ -2219,17 +1972,13 @@ retest_delete_cond:
                 }
             }
             else {
-#ifdef DEBUG
-                printout("Delete:compare:- %d idx %d ppkDead = %x\n", rc, lookupIndex, (unsigned) ppkDead);
-#endif
+                debug("Delete:compare:- %d idx %d ppkDead = %x\n", rc, lookupIndex, (unsigned) ppkDead);
 
                 //if (rc < 0)
                 if (ppkDead->right != NULL && ppkDead->left != NULL) { // we need to perform a pre-delete swap!
                     PP_T *ppkTemp;
 
-#ifdef DEBUG
-                    printout("Rotate 1 ppkDead %x\n", (unsigned) ppkDead);
-#endif
+                    debug("Rotate 1 ppkDead %x\n", (unsigned) ppkDead);
                     ppkRotate = (PP_T *) ppkDead->right + lookupIndex;
                     ppkTemp = NULL; //ppkDead;
 
@@ -2243,7 +1992,7 @@ retest_delete_cond:
                         // here we have the smallest element of the right tree, now we need to perform the swap
                         if (parent) {
                             ppkParent = (PP_T *) parent + lookupIndex;
-                            printout("D:We have a parent\n");
+                            debug("D:We have a parent\n");
 
                             if (side) ppkParent->right = (PP_T *) ppkRotate - lookupIndex;
                             else ppkParent->left = (PP_T *) ppkRotate - lookupIndex;
@@ -2265,15 +2014,11 @@ retest_delete_cond:
                         if (ppkTemp) ppkTemp->left = ppkDead - lookupIndex ; // if ppkRotate is now root, it has no father
                     }
                     else {   // special case for root deletion with no left node on right side, we'll just swap ppkDead with ppkRotate
-#ifdef DEBUG
-                        printout("DS: Parent = %x\n", (unsigned) parent);
-#endif
+                        debug("DS: Parent = %x\n", (unsigned) parent);
 
                         if (parent) {
                             ppkParent = (PP_T *) parent + lookupIndex;
-#ifdef DEBUG
-                            printout("DS: We have a parent\n");
-#endif
+                            debug("DS: We have a parent\n");
 
                             if (side) ppkParent->right = (PP_T *) ppkRotate - lookupIndex;
                             else ppkParent->left = (PP_T *) ppkRotate - lookupIndex;
