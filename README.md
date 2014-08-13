@@ -46,8 +46,8 @@ Others will only unlink the data record fromt he internal tree's ot lists, and r
 
 Quick Start - un-managed (um) data pools (Please see demo / doc folders for a more in-depth knowledge)
 
-1. define your data...
-
+1. define your data.
+```
 typedef struct my_data_s {
     rdb_pp_t[2]     pp; // Required for rDB unmanaged tree with two indexes
     char            name[64];
@@ -121,4 +121,4 @@ int my_print_fn(void *data, void *user_ptr){
 	printf("name: %s",(user_data_t *)data->name);
 	return RDB_CB_OK;
 }
-
+```
