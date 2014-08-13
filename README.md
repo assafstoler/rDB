@@ -55,12 +55,10 @@ typedef struct my_data_s {
     int             age;
     char            passwd[32];
 } user_data_t;
-```
+
 user_data_t ud_tmp; // only used to calculate index offset
 
 
-
-```
 2. init the rDB library
 rdb_init();
 
