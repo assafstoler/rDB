@@ -145,8 +145,9 @@ typedef struct RDB_POOLS {
 //TODO remove this backwards compatability hack
 #define rdbRegisterPool(a,b,c,d)  rdb_register_um_pool(a, b, c, d, NULL) 
 #define rdbRegisterIdx(a,b,c,d)  rdb_register_um_idx(a, b, c, d, NULL) 
-
+/*
 rdb_pool_t *rdb_register_um_pool(char *poolName, int idxCount, int keyOffset, int FLAGS, void *);
+
 int rdbRegisterPoolNew(char *poolName, int idxCount, int FLAGS);
 int rdbRegisterIdxNew(int hdl,  int idx, int segment, int keyOffset, int FLAGS) ;
 int rdb_register_um_idx(rdb_pool_t *,  int idx, int keyOffset, int FLAGS, void *) ;
@@ -159,29 +160,49 @@ void rdbDump(rdb_pool_t *, int index);
 void *rdbDelete(rdb_pool_t *, int idx, void *data);
 void *rdbGet(rdb_pool_t *, int index , void *data) ;
 void *rdbGetNeigh (rdb_pool_t *, int idx, void *data, void **before, void **after) ;
-void rdbInit(void);
 void rdbIterateDelete(rdb_pool_t *, int idx, int fn(void *, void *), void *fn_data, void del_fn(void *,
                       void *), void *del_data) ;
 void rdbFlush( rdb_pool_t *, void fn( void *, void *), void *fn_data);
 void rdb_clean(void);
 int rdbLock(rdb_pool_t *);
 int rdbUnlock(rdb_pool_t *);
+*/
+void        rdb_init(void);
+int         rdb_error_value (int rv, char *err);
+void        rdb_error (char *err);
+rdb_pool_t *rdb_find_pool_by_name (char *poolName);
+rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset,
+                int FLAGS, void *compare_fn);
+rdb_pool_t *rdb_register_um_pool (char *poolName, 
+	            int idxCount, int key_offset, int FLAGS, void *fn);
+void        rdb_clean(void);
+int         rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
+                int FLAGS, void *compare_fn);
+int         rdb_lock(rdb_pool_t *pool); 
+int         rdb_unlock(rdb_pool_t *pool) ;
+int         rdb_insert (rdb_pool_t *pool, void *data);
+int         rdb_insert_one (rdb_pool_t *pool, int index, void *data);
+void       *rdb_get (rdb_pool_t *pool, int idx, void *data);
+void       *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after);
+void        rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
+                void *fn_data, void del_fn(void *, void *), void *del_data);
+void        rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data);
+void       *rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data);
+int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
 
-void rdb_init(void);
-void _rdbDump (rdb_pool_t *, int index, void *start);
+void        _rdb_dump (rdb_pool_t *, int index, void *start);
 
-int keyCompareNull (void *old, void *);
-int keyCompareString (char *old, char *);
-int keyCompareInt8 (int8_t *old, int8_t *);
-int keyCompareUInt8 (uint8_t *old, uint8_t *);
-int keyCompareInt16 (int16_t *old, int16_t *);
-int keyCompareUInt16 (uint16_t *old, uint16_t *);
-int keyCompareInt32 (int32_t *old, int32_t *);
-int keyCompareUInt32 (uint32_t *old, uint32_t *);
-int keyCompareInt64 (int64_t *old, int64_t *);
-int keyCompareUInt64 (uint64_t *old, uint64_t *);
-int keyCompareInt128 (__int128_t *old, __int128_t *);
-int keyCompareUInt128 (__uint128_t *old, __uint128_t *);
+int         key_cmp_str (char *old, char *);
+int         key_cmp_int8 (int8_t *old, int8_t *);
+int         key_cmp_uint8 (uint8_t *old, uint8_t *);
+int         key_cmp_int16 (int16_t *old, int16_t *);
+int         key_cmp_uint16 (uint16_t *old, uint16_t *);
+int         key_cmp_int32 (int32_t *old, int32_t *);
+int         key_cmp_uint32 (uint32_t *old, uint32_t *);
+int         key_cmp_int64 (int64_t *old, int64_t *);
+int         key_cmp_uint64 (uint64_t *old, uint64_t *);
+int         key_cmp_int128 (__int128_t *old, __int128_t *);
+int         key_cmp_uint128 (__uint128_t *old, __uint128_t *);
 //int keyCompareTME (struct timeval *old, struct timeval *);
 //int keyCompareTMA (TVA *old, TVA *);
 //int keyCompare4U32A (U32a *old, U32a *);
