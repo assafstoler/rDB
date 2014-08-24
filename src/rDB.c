@@ -214,6 +214,8 @@ rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset, int FL
         rdb_free (pool);
         return NULL;
     }
+    if (pool->fn[0] == key_cmp_str_p) pool->get_fn[0] = key_cmp_get_str_p;
+    else pool->get_fn[0] = pool->fn[0];
 
     pool->root[0] = NULL;
     pool->key_offset[0] = sizeof (PP_T) * indexCount + key_offset;
@@ -303,6 +305,8 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
         return (rdb_error_value (-4,
             "Index Registration without valid type or compatr fn"));
     }
+    if (pool->fn[idx] == key_cmp_str_p) pool->get_fn[idx] = key_cmp_get_str_p;
+    else pool->get_fn[idx] = pool->fn[idx];
 
     pool->root[idx] = NULL;
     pool->key_offset[idx] = sizeof (PP_T) * pool->indexCount + key_offset;
@@ -362,8 +366,11 @@ int key_cmp_str (char *old, char *new)
 
 int key_cmp_str_p (char **old, char **new)
 {
-//    info ("%s - %s\n", *new,*old);
     return strcmp ( *new, *old);
+}
+int key_cmp_get_str_p (char **old, char *new)
+{
+    return strcmp ( new, *old);
 }
 /*int keyCompareTME (struct timeval *key, struct timeval *keyNew)
 {
@@ -714,7 +721,7 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
 
             //if ((rc = keyCompare (pool, index, dataHead + pool->key_offset[index],
             //                      (void *) data + pool->key_offset[index], 0, 0)) < 0) {
-            if ((rc = pool->fn[index] (/*pool, index, */dataHead + pool->key_offset[index],
+            if ((rc = pool->fn[index] (dataHead + pool->key_offset[index],
                                   (void *) data + pool->key_offset[index])) < 0) {
                 // left side
                 if (ppk->left == NULL) {
@@ -994,7 +1001,7 @@ void   *_rdb_get (rdb_pool_t *pool, int index, void *data, void *start, int part
 #ifdef DEBUG
             key_cmp_dbg (pool, index, dataHead + pool->key_offset[index], data);
 #endif
-            if ((rc = pool->fn[index] (/*pool, index,*/ dataHead + pool->key_offset[index],
+            if ((rc = pool->get_fn[index] (/*pool, index,*/ dataHead + pool->key_offset[index],
                                   (void *) data)) < 0) {
             //if ((rc = keyCompare (pool, index, dataHead + pool->key_offset[index], data, 1,
             //                      partial)) < 0) {

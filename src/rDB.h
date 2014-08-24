@@ -132,6 +132,7 @@ typedef struct RDB_POOLS {
 
     // Fn() pointer for compare operation
     int32_t 	 	(*fn[RDB_POOL_MAX_IDX])();
+    int32_t 	 	(*get_fn[RDB_POOL_MAX_IDX])();
 
     pthread_mutex_t write_mutex;
     pthread_mutex_t read_mutex;
@@ -169,6 +170,7 @@ void        rdb_dump (rdb_pool_t *pool, int index);
 
 int         key_cmp_str (char *old, char *);
 int         key_cmp_str_p (char **old, char **);
+int         key_cmp_get_str_p (char **old, char *);
 int         key_cmp_int8 (int8_t *old, int8_t *);
 int         key_cmp_uint8 (uint8_t *old, uint8_t *);
 int         key_cmp_int16 (int16_t *old, int16_t *);
