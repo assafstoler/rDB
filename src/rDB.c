@@ -1684,29 +1684,18 @@ int _rdb_delete_by_pointer (rdb_pool_t *pool, void *parent, int index, PP_T * pp
     else {
         // two children
 #ifdef KM
-#ifdef __i386__
-        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %x %x\nData tree may be corrupt!\n",
-                       index, (unsigned) ppkDead->left, (unsigned) ppkDead->right);
-#endif
-#ifdef __x86_64__
-        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %llx %llx\nData tree may be corrupt!\n",
-                       index, (unsigned long long) ppkDead->left, (unsigned long long) ppkDead->right);
-#endif
+        info ("rdbDeleteByPointer: a: I should never get here! index = %d, %p %p\n",
+                index, ppkDead->left, ppkDead->right);
         return 0;
 #else
-#ifdef __i386__
-        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %x %x\n", index,
-                       (unsigned) ppkDead->left, (unsigned) ppkDead->right);
-#endif
-#ifdef __x86_64__
-        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %llx %llx\n",
-                       index, (unsigned long long) ppkDead->left, (unsigned long long) ppkDead->right);
-#endif
+        info ("rdbDeleteByPointer: a: I should never get here! index = %d, %p %p\n",
+                index, ppkDead->left, ppkDead->right);
         exit(1);
 #endif
         ppkRight = (void *) ppkDead->right + (sizeof (PP_T) * index);
 
-        if (ppkRight->right && (ppkRight->left == NULL)) { //special case suck up one level
+        if (ppkRight->right && (ppkRight->left == NULL)) { 
+            // Special case back up one level
             if (parent) {
                 if (side)
                     ppkParent->right = (void *) ppkRight - (sizeof (PP_T) * index);
@@ -1722,34 +1711,22 @@ int _rdb_delete_by_pointer (rdb_pool_t *pool, void *parent, int index, PP_T * pp
         }
 
 #ifdef KM
-#ifdef __x86_64__
-        printoutalways("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %llx %llx\nData tree may be corrupt!\n",
-                       index, (unsigned long long) ppkDead->left, (unsigned long long) ppkDead->right);
-        printoutalways("rdbDeleteByPointer:b: I should never get here ~~~~~!!!!!index = %d, %llx %llx\n",
-                       index, (unsigned long long) ppkRight->left, (unsigned long long) ppkRight->right);
-#endif
-#ifdef __i386__
-        printoutalways("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %x %x\nData tree may be corrupt!\n",
-                       index, (unsigned) ppkDead->left, (unsigned) ppkDead->right);
-        printoutalways("rdbDeleteByPointer:b: I should never get here ~~~~~!!!!!index = %d, %x %x\n", index,
-                       (unsigned) ppkRight->left, (unsigned) ppkRight->right);
-#endif
+        printoutalways("rdbDeleteByPointer:a: I should never get here! Index"
+                " = %d, %p %p\nData tree may be corrupt!\n",
+                index, ppkDead->left, ppkDead->right);
+        printoutalways("rdbDeleteByPointer:b: I should never get here! Index"
+                " = %d, %p %p\n",
+                index, ppkRight->left, ppkRight->right);
         return 0;
 #else
-#ifdef __x86_64__
-        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %llx %llx\n",
-                       index, (unsigned long long) ppkDead->left, (unsigned long long) ppkDead->right);
-        info ("rdbDeleteByPointer:b: I should never get here ~~~~~!!!!!index = %d, %llx %llx\n",
-                       index, (unsigned long long) ppkRight->left, (unsigned long long) ppkRight->right);
+// user space
+        info ("rdbDeleteByPointer:a: I should never get here! Index"
+                " = %d, %p %p\n",
+                index, ppkDead->left, ppkDead->right);
+        info ("rdbDeleteByPointer:b: I should never get here! Index"
+                " = %d, %p %p\n",
+                index, ppkRight->left, ppkRight->right);
         exit(1);
-#endif
-#ifdef __i386__
-        info ("rdbDeleteByPointer:a: I should never get here ~~~~~!!!!!index = %d, %x %x\n", index,
-                       (unsigned) ppkDead->left, (unsigned) ppkDead->right);
-       	info ("rdbDeleteByPointer:b: I should never get here ~~~~~!!!!!index = %d, %x %x\n", index,
-                       (unsigned) ppkRight->left, (unsigned) ppkRight->right);
-        exit(1);
-#endif
 #endif
         ppkHook = ppkLeft = (void *) ppkDead->left + (sizeof (PP_T) * index);
 
