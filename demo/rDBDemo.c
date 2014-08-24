@@ -185,6 +185,7 @@ int main(int argc, char *argv[]) {
     simple_demo(pool);
     
     um_multi_record_insert_demo(pool);
+    
 
     // Uncommect Below to see the whole (long) output
     //
@@ -215,6 +216,23 @@ int main(int argc, char *argv[]) {
             pdd->age, pdd->long_value);
     }
      else info ("filed to find record with value 'dead' in index 1");
+    
+    // This is one way to delete a record. Please note rdb_delete only unlinka
+    // data from the tree and return a pointer to it. it DOES NOT free any
+    // allocated momory. it's user responsibility to free the pointer(s) or
+    // re-link them to a tree.
+    
+    info ("Now we delete a record, and repeat the get attempt");
+    
+    pdd=rdb_delete(pool,0,"BAAB");
+	if (pdd!=NULL) info("deleted: %s %s %d %ld",pdd->name, pdd->address_ptr,
+            pdd->age, pdd->long_value);
+    pdd=rdb_get(pool,0,"BAAB");
+	if (pdd!=NULL) {
+        info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+            pdd->age, pdd->long_value);
+    } else info ("get BAAB failed");
+    
     
     // This shows the common way to search for data ... 
     // one use rdb_get with a pointer to a variable containing what is 
