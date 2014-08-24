@@ -76,7 +76,12 @@ rdb_pool_t  *pool_root;
 
 char   	*rdb_error_string = NULL;
 
+// used to calculate tree depth by dump Fn()
+int     levels,
+        maxLevels;
+
 //#define DEBUG
+
 #ifdef DEBUG
 #ifdef KM
 #define debug(b,arg...) printk(b,##arg)
@@ -97,12 +102,17 @@ char   	*rdb_error_string = NULL;
 
 pthread_mutex_t reg_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/// Initilize the rDB subsystem, need to be called once before any other rDB function
+// Initilize the rDB subsystem, must be called once before any other rDB 
+// function
 void rdb_init (void)
 {
     pool_root = NULL;
 }
 
+// Store internal error string to allow used to retrieve it, and return with
+// user set value. typical use will look like
+// return rdv_error_value(-1, "failed to dance this dance");
+// library used can later print that string similar to errno/errstr.
 int rdb_error_value (int rv, char *err)
 {
 #ifdef KM
@@ -116,13 +126,15 @@ int rdb_error_value (int rv, char *err)
 #endif
 
     if (rdb_error_string == NULL)
-        info ("rdb: failed to Alloc RAM for error message, original error was \"%s\"\n", err);
+        info ("rdb: failed to Alloc RAM for error message, original error was"
+                " \"%s\"\n", err);
     else
         strcpy (rdb_error_string, err);
 
     return rv;
 }
 
+// Same as above, without returning a value
 void rdb_error (char *err)
 {
 #ifdef KM
@@ -136,11 +148,16 @@ void rdb_error (char *err)
 #endif
 
     if (rdb_error_string == NULL)
-        info ("rdb: failed to Alloc RAM for error message, original error was \"%s\"\n", err);
+        info ("rdb: failed to Alloc RAM for error message, original error was"
+                " \"%s\"\n", err);
     else
         strcpy (rdb_error_string, err);
 }
 
+// If you lost your pool handle, or more likely, you are working in a multi-
+// threaded application, and you need to attach to a data pool you did not
+// create, you can use this function to retrieve the matching rDB handle.
+// * Remember to use locks on shared data pools.
 rdb_pool_t *rdb_find_pool_by_name (char *poolName)
 {
     rdb_pool_t *pool;
@@ -158,7 +175,8 @@ rdb_pool_t *rdb_find_pool_by_name (char *poolName)
 
     return (NULL);
 }
-int _key_cmp_get_int16 (int16_t *old, int16_t new);
+// rDB Internal. this will set the various compate functionsfor the rDB
+// data maganment routines.
 int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
 
     if (cmp_fn) {
@@ -207,8 +225,8 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
         pool->get_const_fn[i] = key_cmp_const_uint128;
     } else if (flags & RDB_KSTR) {
         pool->fn[i] = key_cmp_str;
-        pool->get_fn[i] = key_cmp_str; //same
-        pool->get_const_fn[i] = key_cmp_str; //same
+        pool->get_fn[i] = key_cmp_str; 
+        pool->get_const_fn[i] = key_cmp_str; 
     } else if (flags & RDB_KPSTR) {
         pool->fn[i] = key_cmp_str_p;
         pool->get_fn[i] = key_cmp_const_str_p;
@@ -225,12 +243,17 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
     return 0;
 }
 
-/// Add a new pool to our pool chain
-rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset, int FLAGS, void *compare_fn)
-{
+// rDB Iternal: Add a new pool to our pool chain
+rdb_pool_t *rdb_add_pool (
+        char *poolName, 
+        int indexCount, 
+        int key_offset, 
+        int FLAGS, 
+        void *compare_fn) {
+
     rdb_pool_t *pool;
 
-    pool = rdb_alloc (sizeof (rdb_pool_t));
+    pool = rdb_alloc(sizeof (rdb_pool_t));
 
     if (pool == NULL) {
         rdb_error ("FATAL: Pool allocation error, out of memory");
@@ -250,7 +273,8 @@ rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset, int FL
     pool->name = rdb_alloc (strlen (poolName) + 1);
 
     if (pool->name == NULL) {
-        rdb_error ("FATAL: pool allocation error, out of memory (pool name)");
+        rdb_error ("rDB: Fatal: pool allocation error, out of memor for pool"
+                " name");
         pool_root = pool->next;
         rdb_free (pool);
         return NULL;
@@ -259,7 +283,8 @@ rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset, int FL
     strcpy (pool->name, poolName);
     
     if (-1 == set_pool_fn_pointers(pool, 0, FLAGS, compare_fn)){
-        rdb_error ("RDB Fatal: pool registration without type or matching compare fn");
+        rdb_error ("rDB: Fatal: pool registration without type or matching"
+                " compare fn");
         pool_root = pool->next;
         rdb_free (pool);
         return NULL;
@@ -267,13 +292,18 @@ rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset, int FL
 
     pool->root[0] = NULL;
     pool->key_offset[0] = sizeof (PP_T) * indexCount + key_offset;
+
     debug ("pool->key_offset=%d\n", pool->key_offset[0]);
+
     pool->indexCount = indexCount;
     pool->FLAGS[0] = FLAGS;
+
     debug ("pool %s, FLAGS=%xn", pool->name, pool->FLAGS[0]);
+
+#ifndef KM
     pthread_mutex_init(&pool->read_mutex, NULL); 
     pthread_mutex_init(&pool->write_mutex, NULL); 
-
+#endif
     return pool;
 }
 
@@ -283,15 +313,20 @@ rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset, int FL
 // at the start of the structure - however it is calculated and stored as offset
 // from the top of the structure.
 
-rdb_pool_t *rdb_register_um_pool (char *poolName, 
-	int idxCount, int key_offset, int FLAGS, void *fn)
-{
+rdb_pool_t *rdb_register_um_pool (
+        char *poolName, 
+	    int idxCount, 
+        int key_offset, 
+        int FLAGS, 
+        void *fn) {
+
     rdb_pool_t *pool;
 
+    //TODO:kernel frindly locks
     pthread_mutex_lock(&reg_mutex);
 
     if (rdb_find_pool_by_name (poolName) != NULL) {
-        rdb_error ("FATAL: Attempt to register an existing rdb pool (by name)");
+        rdb_error ("rDB: FATAL: Duplicte pool name in rdb_register_pool");
         pool = NULL;
     } else {
         pool = rdb_add_pool (poolName, idxCount, key_offset, FLAGS, fn);
@@ -301,8 +336,11 @@ rdb_pool_t *rdb_register_um_pool (char *poolName,
     return pool;
 }
 
+// Remove rDB traces. use before exit() or when rDB no longer needed.
+// Use rdb_init after, to re_start rDB
 void rdb_clean(void) {
-    rdb_pool_t *pool, *pool_next;
+    rdb_pool_t  *pool, 
+                *pool_next;
 
     if (pool_root != NULL) {
         pool = pool_root;
@@ -319,6 +357,7 @@ void rdb_clean(void) {
     return ;
 }
 
+// Register additional Indexes to an existing data pool
 int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
         int FLAGS, void *compare_fn) {
     pthread_mutex_lock(&reg_mutex);
@@ -336,27 +375,6 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
         return (rdb_error_value (-4,
             "Index Registration without valid type or compatr fn. Ignored"));
     }
-/*    if (compare_fn)                 pool->fn[idx] = compare_fn;
-    else if (FLAGS & RDB_KINT32)    pool->fn[idx] = key_cmp_int32;
-    else if (FLAGS & RDB_KUINT32)   pool->fn[idx] = key_cmp_uint32;
-    else if (FLAGS & RDB_KINT64)    pool->fn[idx] = key_cmp_int64;
-    else if (FLAGS & RDB_KUINT64)   pool->fn[idx] = key_cmp_uint64;
-    else if (FLAGS & RDB_KINT16)    pool->fn[idx] = key_cmp_int16;
-    else if (FLAGS & RDB_KUINT16)   pool->fn[idx] = key_cmp_uint16;
-    else if (FLAGS & RDB_KINT8)     pool->fn[idx] = key_cmp_int8;
-    else if (FLAGS & RDB_KUINT8)    pool->fn[idx] = key_cmp_uint8;
-    else if (FLAGS & RDB_KINT128)   pool->fn[idx] = key_cmp_int128;
-    else if (FLAGS & RDB_KUINT128)  pool->fn[idx] = key_cmp_uint128;
-    else if (FLAGS & RDB_KSTR)      pool->fn[idx] = key_cmp_str;
-    else if (FLAGS & RDB_KPSTR)     pool->fn[idx] = key_cmp_str_p;
-//    else if (FLAGS & RDB_KTME)    pool->fn[idx] = keyCompareTME;
-//    else if (FLAGS & RDB_KTMA)    pool->fn[idx] = keyCompareTMA;
-    else if (FLAGS & (RDB_NOKEYS))  pool->fn[idx] = NULL;
-    //else if (FLAGS & RDB_K4U32A)  pool->fn[idx] = keyCompare4U32A;
-    else {
-        return (rdb_error_value (-4,
-            "Index Registration without valid type or compatr fn"));
-    }*/
 
     pool->root[idx] = NULL;
     pool->key_offset[idx] = sizeof (PP_T) * pool->indexCount + key_offset;
@@ -366,6 +384,7 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
     return (idx);
 }
 
+// Below is a set of self explanatory compare functions...
 int key_cmp_int32 (int32_t *old, int32_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); // 8% lookup boost :)
@@ -459,7 +478,6 @@ int key_cmp_const_uint128 (__uint128_t *old, __uint128_t new)
 
 int key_cmp_str (char *old, char *new)
 {
-//    info ("%s - %s\n", new,old);
     return strcmp ( new, old);
 }
 
@@ -489,106 +507,13 @@ int key_cmp_const_str_p (char **old, char *new)
     return 0;
 }*/
 
-//TODO have function accept union -save assignment
+inline void set_pointers (
+        rdb_pool_t *pool, 
+        int index, 
+        void *start, 
+        PP_T ** ppk, 
+        void **dataHead){
 
-#ifdef DEBUG
-int key_cmp_dbg (rdb_pool_t *pool, int index, void *old, void *new)
-{
-    rdb_key_union  *key,
-                 *keyNew;
-    key = old;
-    keyNew = new;
-    info ("pool %s, Add_a: %x : %x\n", pool->name, (unsigned long) old, (unsigned long) new);
-    info ("pool %s, Add_b: %x : %x\n", pool->name, (unsigned long) keyNew, (unsigned long) key);
-    info ("pool %s, FLAGS=%xn", pool->name, pool->FLAGS[index]);
-
-    switch (pool->FLAGS[index] & (RDB_KEYS)) {
-        case RDB_KPSTR:
-            debug ("pool=%s, pstr %s : %s\n", pool->name, keyNew->pStr, key->pStr);
-            break;
-
-        case RDB_KSTR:
-            debug ("str %s : %s\n", &keyNew->str, &key->str);
-            break;
-
-        case RDB_KINT8:
-            debug ("Int: new: %d, old: %d = %d\n", keyNew->i8, key->i8,
-                            (keyNew->i8 == key->i8) ? 0 : ((keyNew->i8 < key->i8) ? -1 : 1));
-            break;
-
-        case RDB_KINT16:
-            debug ("Int: new: %d, old: %d = %d\n", keyNew->i16, key->i16,
-                            (keyNew->i16 == key->i16) ? 0 : ((keyNew->i16 < key->i16) ? -1 : 1));
-            break;
-
-        case RDB_KINT32:
-            debug ("Int: new: %ld, old: %ld = %l\n", keyNew->i32, key->i32,
-                            (keyNew->i32 == key->i32) ? 0 : ((keyNew->i32 < key->i32) ? -1 : 1));
-            break;
-
-        case RDB_KINT64:
-            debug ("Int: new: %lld, old: %lld = %d\n", keyNew->i64, key->i64,
-                            (keyNew->i64 == key->i64) ? 0 : ((keyNew->i64 < key->i64) ? -1 : 1));
-            break;
-
-        case RDB_KUINT8:
-            debug ("Int: new: %d, old: %d = %d\n", keyNew->u8, key->u8,
-                            (keyNew->u8 == key->u8) ? 0 : ((keyNew->u8 < key->u8) ? -1 : 1));
-            break;
-
-        case RDB_KUINT16:
-            debug ("Int: new: %d, old: %d = %d\n", keyNew->u16, key->u16,
-                            (keyNew->u16 == key->u16) ? 0 : ((keyNew->u16 < key->u16) ? -1 : 1));
-            break;
-
-        case RDB_KUINT32:
-            debug ("Int: new: %lu, old: %lu = %d\n", keyNew->u32, key->u32,
-                            (keyNew->u32 == key->u32) ? 0 : ((keyNew->u32 < key->u32) ? -1 : 1));
-            break;
-
-        case RDB_KUINT64:
-            debug ("Int: new: %llx, old: %llx = %d\n", keyNew->u64, key->u64,
-                            (keyNew->u64 == key->u64) ? 0 : ((keyNew->u64 < key->u64) ? -1 : 1));
-            break;
-
-/*        case RDB_KTME:
-            if (keyNew->tv.tv_sec != key->tv.tv_sec) return ((keyNew->tv.tv_sec < key->tv.tv_sec) ? -1 : 1);
-
-            if (keyNew->tv.tv_usec != key->tv.tv_sec) return ((keyNew->tv.tv_usec < key->tv.tv_usec) ? -1 : 1);
-
-            return 0;
-        case RDB_KTMA:
-            printoutalways ("tma: new: %ld:%ld.%ld\n", keyNew->tva.tv.tv_sec, keyNew->tva.tv.tv_usec,
-                            keyNew->tva.acc);
-            printoutalways ("tma: old: %ld:%ld.%ld\n", key->tva.tv.tv_sec, key->tva.tv.tv_usec, key->tva.acc);
-
-            if (keyNew->tva.tv.tv_sec != key->tva.tv.tv_sec) return ((keyNew->tva.tv.tv_sec <
-                        key->tva.tv.tv_sec) ? -1 : 1);
-
-            if (keyNew->tva.tv.tv_usec != key->tva.tv.tv_usec) return ((keyNew->tva.tv.tv_usec <
-                        key->tva.tv.tv_usec) ? -1 : 1);
-
-            if (keyNew->tva.acc != key->tva.acc) return ((keyNew->tva.acc < key->tva.acc) ? -1 : 1);
-
-            return 0;
-*/
-        default:                                   // can not be
-            return 0;
-    }
-
-    return 0;
-}
-#endif
-
-int     levels,
-        maxLevels;
-
-#ifdef DEBUG
-inline void set_pointers (rdb_pool_t *pool, int index, void *start, PP_T ** ppk, void **dataHead)
-#else
-void set_pointers (rdb_pool_t *pool, int index, void *start, PP_T ** ppk, void **dataHead)
-#endif
-{
     if (start == NULL || (start == pool->root[index]))
         *ppk = (void *) pool->root[index] + (sizeof (PP_T) * index);
     else
@@ -598,6 +523,7 @@ void set_pointers (rdb_pool_t *pool, int index, void *start, PP_T ** ppk, void *
     return;
 }
 
+// TODO: Bring this up-to-date
 void _rdb_dump (rdb_pool_t *pool, int index, void *start)
 {
     void  **searchNext;
@@ -717,44 +643,53 @@ int rdb_unlock(rdb_pool_t *pool)
     return pthread_mutex_unlock(&pool->write_mutex);
 }
 
-void rdb_dump (rdb_pool_t *pool, int index)
-{
+// Dump an entire pool to stdout. only the selected index field will be
+// printed out. Also calculates tree depth...
+void rdb_dump (rdb_pool_t *pool, int index) {
+
     if (pool->root[index] == NULL) return;
 
     if ((pool->FLAGS[index] & (RDB_KEYS)) != 0)
         _rdb_dump (pool, index, NULL);
 }
-//#define DEBUG
-int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *parent, int side)
-{
+
+int _rdb_insert (
+        rdb_pool_t  *pool, 
+        void        *data, 
+        void        *start, 
+        int         index, 
+        void        *parent, 
+        int         side) { 
+
     int     rc, rc2;
     void   *dataHead;
 
     if (data == NULL)
         return (-1);
 
-#ifdef DEBUG
-    printout ("Insert:AVL: pool=%s, idx=%d, start = %x\n",pool->name , (int) index, (unsigned long) start);
-#endif
+    debug ("Insert:AVL: pool=%s, idx=%d, start = %p\n",
+            pool->name , 
+            (int) index, 
+            start);
 
     if ((pool->FLAGS[index] & RDB_BTREE) == RDB_BTREE) {
         PP_T   *ppk,
                *ppkNew;
-        PP_T   *ppkParent = NULL;               // NULL is here to make compiler happy
+        PP_T   *ppkParent = NULL;       // NULL is here to make compiler happy
         PP_T   *ppkRotate;
         PP_T   *ppkBottom;
 
         if (pool->FLAGS[index] & (RDB_NOKEYS)) {
-            //printf("A\n");
             if (pool->root[index] == NULL) {
                 pool->root[index] = pool->tail[index] = data;
                 ppkNew = data + (sizeof (PP_T) * index);
                 ppkNew->left = ppkNew->right = NULL;
                 ppkNew->balance = 0;
             }
-            else {   // added elemant
-                if (pool->FLAGS[index] &
-                        RDB_KFIFO) { //FIFO, add to tail, as we always read/remove from head forward
+            else {   // Added elemant
+                if (pool->FLAGS[index] & RDB_KFIFO) { 
+                    // FIFO, add to tail, as we always read/remove from head 
+                    // forward
                     ppkParent = pool->tail[index] + (sizeof (PP_T) * index);
                     ppkNew = data + (sizeof (PP_T) * index);
                     ppkNew->left = ppkParent - index;
@@ -763,8 +698,9 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
                     ppkNew->balance = 0;
                     pool->tail[index] = data;
                 }
-                else if (pool->FLAGS[index] &
-                         RDB_KLIFO) {   //FIFO, add to head, as we always read/remove from head forward
+                else if (pool->FLAGS[index] & RDB_KLIFO) {   
+                    // LIFO, add to head, as we always read/remove from head 
+                    // forward
                     ppkParent = pool->root[index] + (sizeof (PP_T) * index);
                     ppkNew = data + (sizeof (PP_T) * index);
                     ppkNew->right = ppkParent - index;
@@ -774,24 +710,18 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
                     pool->root[index] = data;
                 }
             }
-            //printf("B\n");
-
         }
 
         else if (pool->root[index] == NULL) {
-#ifdef DEBUG
-            printout ("Virgin Insert, pool=%s\n",pool->name);
-#endif
+            debug ("Virgin Insert, pool=%s\n",pool->name);
             pool->root[index] = data;
-#ifdef DEBUG
-            printout ("ppkRoot  = %p,%p \n",  pool->root[index],
+            debug ("ppkRoot  = %p,%p \n",  pool->root[index],
                        pool->root[index] + (sizeof (PP_T) * index));
-#endif
             ppkNew = data + (sizeof (PP_T) * index);
             ppkNew->left = ppkNew->right = NULL;
             ppkNew->balance = 0;
-#ifdef DEBUG
 
+#ifdef DEBUG
             if (start == NULL)
                 ppk = (PP_T *) pool->root[index] + (sizeof (PP_T) * index);
             else
@@ -799,49 +729,35 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
 
             dataHead = ppk - index;
             ppkNew = data;
-            printout ("Datahead: %p, data: %p, ppkNew: %p, start%snull %p ? %p\n", dataHead,
-                      data, ppkNew,
-                      (start == NULL) ? "=" : "!=", dataHead + pool->key_offset[index],
-                      (void *) (ppkNew) + pool->key_offset[index]);
-            //keyCompDebug (pool, index, dataHead + pool->key_offset[index],
-            //              (void *) ppkNew + pool->key_offset[index]);
+            debug ("Datahead: %p, data: %p, ppkNew: %p, start%snull %p ? %p\n",
+                    dataHead, data, ppkNew, (start == NULL) ? "=" : "!=",
+                    dataHead + pool->key_offset[index], 
+                    (void *) (ppkNew) + pool->key_offset[index]);
 #endif
         }
         else {
             set_pointers (pool, index, start, &ppk, &dataHead);
-#ifdef DEBUG
-            printout ("Pointers SET, start = %x\n", (unsigned long) (start));
-#endif
+            debug ("Pointers SET, start = %x\n", (unsigned long) (start));
             ppkNew = (void *) data + (sizeof (PP_T) * index);
-#ifdef DEBUG
-            //keyCompDebug (pool, index, dataHead + pool->key_offset[index],
-            //              (void *) data + pool->key_offset[index]);
-#endif
 
-            //if ((rc = keyCompare (pool, index, dataHead + pool->key_offset[index],
-            //                      (void *) data + pool->key_offset[index], 0, 0)) < 0) {
             if ((rc = pool->fn[index] (dataHead + pool->key_offset[index],
-                                  (void *) data + pool->key_offset[index])) < 0) {
+                    (void *) data + pool->key_offset[index])) < 0) {
                 // left side
                 if (ppk->left == NULL) {
-#ifdef DEBUG
-                    printout ("Left Insert\n");
-#endif
+                    debug ("Left Insert\n");
                     ppk->left = data;           //ppkNew;
                     ppk->balance -= 1;
                     ppkNew->left = ppkNew->right = NULL;
                     ppkNew->balance = 0;
 
                     if (ppk->balance != 0)
-                        return 1;               // added a level
+                        return 1;           // added a level
                     else
-                        return 0;               // added a leaf... in an existing level
+                        return 0;           // added a leaf in an existing level
                 }
                 else {
-                    // here we possibly added a level to the left tree
-#ifdef DEBUG
-                    printout ("Diving Left\n");
-#endif
+                    // Here we possibly added a level to the left tree
+                    debug ("Diving Left\n");
 
                     if ((rc2 = _rdb_insert (pool, data, ppk->left, index, start,
                                            RDB_TREE_LEFT)) == 1) {
@@ -850,16 +766,16 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
 
                         if (ppk->balance == -2) {
                             // we need to rotate
-                            ppkRotate = (void *) ppk->left + (sizeof (PP_T) * index);
+                            ppkRotate = (void *) ppk->left + 
+                                    (sizeof (PP_T) * index);
 
                             if (ppkRotate->balance < 0) {
                                 //left left case
-#ifdef DEBUG
-                                printout ("Left Left Rotate\n");
-#endif
+                                debug ("Left Left Rotate\n");
 
                                 if (parent) {
-                                    ppkParent = (void *) parent + (sizeof (PP_T) * index);
+                                    ppkParent = (void *) parent + 
+                                            (sizeof (PP_T) * index);
 
                                     if (!side)  //RDB_TREE_LEFT
                                         ppkParent->left = ppk->left;
@@ -867,7 +783,7 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
                                         ppkParent->right = ppk->left;
                                 }
                                 else
-                                    pool->root[index] = ppk->left;      //ppkRotate;
+                                    pool->root[index] = ppk->left;  //ppkRotate;
 
                                 ppk->left = ppkRotate->right;
                                 ppkRotate->right = dataHead;    //ppk;
@@ -877,10 +793,9 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
                             }
                             else {
                                 // left right case
-#ifdef DEBUG
-                                printout ("Left Right Rotate\n");
-#endif
-                                ppkBottom = (void *) ppkRotate->right + (sizeof (PP_T) * index);
+                                debug ("Left Right Rotate\n");
+                                ppkBottom = (void *) ppkRotate->right + 
+                                                (sizeof (PP_T) * index);
 
                                 if (ppkBottom->balance > 0) {
                                     ppk->balance = 0;
@@ -904,7 +819,8 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
                                 ppk = ppkBottom;
 
                                 if (parent) {
-                                    ppkParent = (void *) parent + (sizeof (PP_T) * index);
+                                    ppkParent = (void *) parent + 
+                                            (sizeof (PP_T) * index);
 
                                     if (!side)  //RDB_TREE_LEFT
                                         ppkParent->left = ppkBottom - index;
@@ -916,10 +832,10 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
                         }
 
                         if (ppk->balance >= 0)
-                            return 0;           // no further balanceing action needed
+                            return 0;   // no further balanceing action needed
 
                         if (ppk->balance == -1)
-                            return 1;           // need to continue balancing up
+                            return 1;   // need to continue balancing up
                     }
                     else if (rc2 == -1) return -1;
                 }
@@ -927,44 +843,40 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
             else if (rc > 0) {                  // addin on Right side
                 //right side
                 if (ppk->right == NULL) {
-#ifdef DEBUG
-                    printout ("Right Insert\n");
-#endif
+                    debug ("Right Insert\n");
                     ppk->right = data;          //ppkNew;
                     ppk->balance += 1;
                     ppkNew->left = ppkNew->right = NULL;
                     ppkNew->balance = 0;
 
                     if (ppk->balance != 0)
-                        return 1;               // added a level
+                        return 1;       // added a level
                     else
-                        return 0;               // added a leaf... in an existing level
+                        return 0;       // added a leaf... in an existing level
                 }
                 else {
-#ifdef DEBUG
-                    printout ("Diving Right, start = %p, balance=%d\n", start, ppk->balance);
-#endif
+                    debug ("Diving Right, start = %p, balance=%d\n", 
+                                                        start, ppk->balance);
 
-                    if (( rc2 = _rdb_insert (pool, data, ppk->right, index, start,
-                                            RDB_TREE_RIGHT)) == 1) {
+                    if (( rc2 = _rdb_insert (pool, data, ppk->right, index, 
+                                            start, RDB_TREE_RIGHT)) == 1) {
                         // level added on right side
                         ppk->balance++;
 
                         if (ppk->balance == 2) {
                             // we need to rotate
-                            ppkRotate = (void *) ppk->right + (sizeof (PP_T) * index);
+                            ppkRotate = (void *) ppk->right + 
+                                    (sizeof (PP_T) * index);
 
                             if (ppkRotate->balance > 0) {
                                 //right right case ( left rotation )
-#ifdef DEBUG
-                                printout ("Right Right Rotate, parent = %x,index=%d\n", (unsigned) parent, index);
-#endif
+                                debug ("Right Right Rotate, parent = %x, "
+                                        "index=%d\n", (unsigned) parent, index);
 
                                 if (parent != NULL) {
-#ifdef DEBUG
-                                    printout ("parent exist\n");
-#endif
-                                    ppkParent = (void *) parent + (sizeof (PP_T) * index);
+                                    debug ("parent exist\n");
+                                    ppkParent = (void *) parent + 
+                                            (sizeof (PP_T) * index);
 
                                     if (!side)  //RDB_TREE_LEFT
                                         ppkParent->left = ppk->right;
@@ -972,23 +884,22 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
                                         ppkParent->right = ppk->right;
                                 }
                                 else
-                                    pool->root[index] = ppk->right;     //ppkRotate;
+                                    pool->root[index] = ppk->right; //ppkRotate;
 
                                 ppk->right = ppkRotate->left;
                                 ppkRotate->left = dataHead;     //ppk;
                                 ppk->balance = -1 * (ppkRotate->balance - 1);
                                 ppkRotate->balance = (ppkRotate->balance - 1);
                                 ppk = ppkRotate;
-#ifdef DEBUG
-                                printout ("pool->root[%d] = %x\n", index, pool->root[index]);
-#endif
+                                debug ("pool->root[%d] = %x\n", index, 
+                                        pool->root[index]);
                             }
                             else {
-                                // right left case ( right rotation followed by left rotation )
-#ifdef DEBUG
-                                printout ("Right Left Rotate\n");
-#endif
-                                ppkBottom = (void *) ppkRotate->left + (sizeof (PP_T) * index);
+                                // right left case 
+                                // (right rotation followed by left rotation )
+                                debug ("Right Left Rotate\n");
+                                ppkBottom = (void *) ppkRotate->left + 
+                                        (sizeof (PP_T) * index);
 
                                 if (ppkBottom->balance < 0) {
                                     ppk->balance = 0;
@@ -1012,7 +923,8 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
                                 ppk = ppkBottom;
 
                                 if (parent) {
-                                    ppkParent = (void *) parent + (sizeof (PP_T) * index);
+                                    ppkParent = (void *) parent + 
+                                            (sizeof (PP_T) * index);
 
                                     if (!side)  //RDB_TREE_LEFT
                                         ppkParent->left = ppkBottom - index;
@@ -1024,35 +936,34 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
                         }
 
                         if (ppk->balance <= 0)
-                            return 0;           // no further balanceing action needed
+                            return 0;   // no further balanceing action needed
 
                         if (ppk->balance == 1)
-                            return 1;           // need to continue balancing up
+                            return 1;   // need to continue balancing up
                     }
                     else if (rc2 == -1) return -1;
                 }
             }
             else {
-#ifdef DEBUG
-                debug ("Skipped due to multiple key on pool %s index %d\n", pool->name, index);
-                //keyCompDebug (pool, index, dataHead + pool->key_offset[index], /*ppkNew */ data +
-                //              pool->key_offset[index]);
-#endif
+                info ("Skipped due to multiple key on pool %s index %d\n",
+                        pool->name, index);
                 //TODO: give actal data
-                return (rdb_error_value(-1, "Insert index failed due to multiple key in pool")); // %s index %d", pool->name, index);
-            }                                   // multiple keys not yet supported!
+                return (rdb_error_value(-1, "Insert index failed due to "
+                        "multiple key in pool")); 
+            }   // multiple keys not yet supported!
         }
 
         return 0;
     }
 
-    return -1;                                  // we found no mechanizm to add node
-
-
+    return -1;                          // we found no mechanizm to add node
 }
 
-// return shoud be the # of updated indexes, which must maych the number of defined indexes, anything less shows an error
-// TODO? should we make this atomic - meaning if one index failes fo insert, delete the previously inserted ones?
+// Return shoud be the # of updated indexes, which must maych the number of 
+// defined indexes, anything less shows an error and should be treated as 
+// such by user.
+// TODO? Should we make this atomic - meaning if one index failes fo insert, 
+// delete the previously inserted ones?
 
 int rdb_insert (rdb_pool_t *pool, void *data)
 {
@@ -1069,13 +980,18 @@ int rdb_insert (rdb_pool_t *pool, void *data)
     return rc;
 }
 
-// only insert one index (asuming this index was removed and updated prior).
+// Only insert one index (asuming this index was removed and updated prior).
 int rdb_insert_one (rdb_pool_t *pool, int index, void *data)
 {
     return _rdb_insert (pool, data, pool->root[index], index, NULL, 0) ;
 }
 
-void   *_rdb_get (rdb_pool_t *pool, int index, void *data, void *start, int partial)
+void   *_rdb_get (
+        rdb_pool_t  *pool, 
+        int         index, 
+        void        *data, 
+        void        *start, 
+        int         partial)
 {
     PP_T   *ppk;
     int     rc;
@@ -1092,12 +1008,9 @@ void   *_rdb_get (rdb_pool_t *pool, int index, void *data, void *start, int part
 
             if (data == NULL ) {
                 debug("GetFail???\n");
-                return (dataHead);              // special case, return root node
+                return (dataHead);          // special case, return root node
             }
 
-#ifdef DEBUG
-            key_cmp_dbg (pool, index, dataHead + pool->key_offset[index], data);
-#endif
             if ((rc = pool->get_fn[index] (dataHead + pool->key_offset[index],
                     (void *) data)) < 0) {
                 // left side
