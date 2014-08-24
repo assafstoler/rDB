@@ -3,6 +3,8 @@ rDB
 
 Note: I'm in the progress of migrating to cmake, at this moment only user-space library (static) is set to build. rest will be re-introduced shortly (8/13/14)
 
+Demo is now live and working. Lots more will be added soon, but first I'll do some unit tests to prove all data managment functions do as their told (8/24/14)
+
 
 rDB or RAM DataBase is a library to easily manage and manipulate program data with strong focus on performance and ease of use, both in kernel and user space
 
