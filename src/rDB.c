@@ -204,7 +204,7 @@ rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset, int FL
     else if (FLAGS & RDB_KINT128)   pool->fn[0] = key_cmp_int128;
     else if (FLAGS & RDB_KUINT128)  pool->fn[0] = key_cmp_uint128;
     else if (FLAGS & RDB_KSTR)      pool->fn[0] = key_cmp_str;
-    else if (FLAGS & RDB_KPSTR)     pool->fn[0] = key_cmp_str; //TODO is this right ? we shall see
+    else if (FLAGS & RDB_KPSTR)     pool->fn[0] = key_cmp_str_p;
     //else if (FLAGS & RDB_KTME)    pool->fn[0] = keyCompareTME;
     //else if (FLAGS & RDB_KTMA)    pool->fn[0] = keyCompareTMA;
     else if (FLAGS & RDB_NOKEYS)    pool->fn[0] = NULL;
@@ -294,7 +294,7 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
     else if (FLAGS & RDB_KINT128)   pool->fn[idx] = key_cmp_int128;
     else if (FLAGS & RDB_KUINT128)  pool->fn[idx] = key_cmp_uint128;
     else if (FLAGS & RDB_KSTR)      pool->fn[idx] = key_cmp_str;
-    else if (FLAGS & RDB_KPSTR)     pool->fn[idx] = key_cmp_str; //TODO is thsi right ?
+    else if (FLAGS & RDB_KPSTR)     pool->fn[idx] = key_cmp_str_p;
 //    else if (FLAGS & RDB_KTME)    pool->fn[idx] = keyCompareTME;
 //    else if (FLAGS & RDB_KTMA)    pool->fn[idx] = keyCompareTMA;
     else if (FLAGS & (RDB_NOKEYS))  pool->fn[idx] = NULL;
@@ -320,7 +320,7 @@ int key_cmp_uint32 (uint32_t *old, uint32_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmpi_nt16 (int16_t *old, int16_t *new)
+int key_cmp_int16 (int16_t *old, int16_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
@@ -356,7 +356,14 @@ int key_cmp_uint128 (__uint128_t *old, __uint128_t *new)
 
 int key_cmp_str (char *old, char *new)
 {
+//    info ("%s - %s\n", new,old);
     return strcmp ( new, old);
+}
+
+int key_cmp_str_p (char **old, char **new)
+{
+//    info ("%s - %s\n", *new,*old);
+    return strcmp ( *new, *old);
 }
 /*int keyCompareTME (struct timeval *key, struct timeval *keyNew)
 {
@@ -520,12 +527,7 @@ void _rdb_dump (rdb_pool_t *pool, int index, void *start)
 
         switch (pool->FLAGS[index] & (RDB_KEYS)) {
             case RDB_KPSTR:
-#ifdef __i386__
-                info ("Dump_ps: %s (%x)\n", key->pStr, (unsigned) &key->pStr);  //searchPrev);
-#endif
-#ifdef __x86_64__
-                info ("Dump_ps: %s (%llx)\n", key->pStr, (unsigned long long) &key->pStr);  //searchPrev);
-#endif
+                info ("Dump_ps: %s (%p)\n", key->pStr,  &key->pStr);  //searchPrev);
                 break;
 
             case RDB_KSTR:
@@ -926,11 +928,12 @@ int _rdb_insert (rdb_pool_t *pool, void *data, void *start, int index, void *par
             }
             else {
 #ifdef DEBUG
-                printout ("Skipped due to multiple key on pool %s index %d\n", pool->name, index);
+                debug ("Skipped due to multiple key on pool %s index %d\n", pool->name, index);
                 //keyCompDebug (pool, index, dataHead + pool->key_offset[index], /*ppkNew */ data +
                 //              pool->key_offset[index]);
 #endif
-                return (-1);
+                //TODO: give actal data
+                return (rdb_error_value(-1, "Insert index failed due to multiple key in pool")); // %s index %d", pool->name, index);
             }                                   // multiple keys not yet supported!
         }
 

@@ -121,9 +121,6 @@ typedef struct RDB_POOLS {
     void   			*next; 
     void   			*prev;
 
-    // ID number of pool - think of it as a pool handle
-    // unsigned int 	id;
-
     // Number of indexs this data poll have
     unsigned char 	indexCount;
 
@@ -142,31 +139,8 @@ typedef struct RDB_POOLS {
     //   rdb_index_data_t**  index_data;             ///< index data master containder - dynamic
 }  rdb_pool_t;
 
-//TODO remove this backwards compatability hack
-#define rdbRegisterPool(a,b,c,d)  rdb_register_um_pool(a, b, c, d, NULL) 
-#define rdbRegisterIdx(a,b,c,d)  rdb_register_um_idx(a, b, c, d, NULL) 
-/*
-rdb_pool_t *rdb_register_um_pool(char *poolName, int idxCount, int keyOffset, int FLAGS, void *);
 
-int rdbRegisterPoolNew(char *poolName, int idxCount, int FLAGS);
-int rdbRegisterIdxNew(int hdl,  int idx, int segment, int keyOffset, int FLAGS) ;
-int rdb_register_um_idx(rdb_pool_t *,  int idx, int keyOffset, int FLAGS, void *) ;
-int findPoolIdByName (char *poolName);
-rdb_pool_t *findPoolAddressIdByName (char *poolName);
-int rdb_insert(rdb_pool_t *, void *data);
-int rdbInsertOne (rdb_pool_t *, int index, void *data);
-int rdbDeleteOne (rdb_pool_t *, int index, void *data);
-void rdbDump(rdb_pool_t *, int index);
-void *rdbDelete(rdb_pool_t *, int idx, void *data);
-void *rdbGet(rdb_pool_t *, int index , void *data) ;
-void *rdbGetNeigh (rdb_pool_t *, int idx, void *data, void **before, void **after) ;
-void rdbIterateDelete(rdb_pool_t *, int idx, int fn(void *, void *), void *fn_data, void del_fn(void *,
-                      void *), void *del_data) ;
-void rdbFlush( rdb_pool_t *, void fn( void *, void *), void *fn_data);
-void rdb_clean(void);
-int rdbLock(rdb_pool_t *);
-int rdbUnlock(rdb_pool_t *);
-*/
+extern char   	*rdb_error_string;
 void        rdb_init(void);
 int         rdb_error_value (int rv, char *err);
 void        rdb_error (char *err);
@@ -190,9 +164,11 @@ void        rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data
 void       *rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data);
 int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
 
-void        _rdb_dump (rdb_pool_t *, int index, void *start);
+//void        _rdb_dump (rdb_pool_t *, int index, void *start);
+void        rdb_dump (rdb_pool_t *pool, int index);
 
 int         key_cmp_str (char *old, char *);
+int         key_cmp_str_p (char **old, char **);
 int         key_cmp_int8 (int8_t *old, int8_t *);
 int         key_cmp_uint8 (uint8_t *old, uint8_t *);
 int         key_cmp_int16 (int16_t *old, int16_t *);
