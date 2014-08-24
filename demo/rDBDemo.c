@@ -202,10 +202,18 @@ int main(int argc, char *argv[]) {
 	pdd=rdb_get(pool,3,&xxx);
 	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,pdd->age,pdd->long_value);
 	
-    //pdd=rdb_get(pool,3,501);
-	//if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,pdd->age,pdd->long_value);
+    pdd=rdb_get_const(pool,3,501);
+	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,pdd->age,pdd->long_value);
+   
+    // This is a violation (string is refferance by ponter), compiler will
+    // complain, rightfully, but it will work. One shuld use rdb_get() 
+    // for strings, as done above 
+    //
+    // pdd=rdb_get_const(pool,1,"abcd");
+	// if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,pdd->age,pdd->long_value);
+    
 
-    // this will iterate the entire data pool, calling myDump on each record
+    // This will iterate the entire data pool, calling myDump on each record
     // BUT, return code from the call can intervene. in this case, it will
     // about the cycle after print record where age==3	
     // try changing the index we use to iterate on . what happened?

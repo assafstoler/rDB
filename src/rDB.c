@@ -158,6 +158,72 @@ rdb_pool_t *rdb_find_pool_by_name (char *poolName)
 
     return (NULL);
 }
+int _key_cmp_get_int16 (int16_t *old, int16_t new);
+int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
+
+    if (cmp_fn) {
+        pool->fn[i] = cmp_fn;
+        pool->get_fn[i] = cmp_fn;
+        pool->get_const_fn[i] = cmp_fn;
+    } else if (flags & RDB_KINT32) {   
+        pool->fn[i] = key_cmp_int32;
+        pool->get_fn[i] = key_cmp_int32;
+        pool->get_const_fn[i] = key_cmp_const_int32;
+    } else if (flags & RDB_KUINT32){  
+        pool->fn[i] = key_cmp_uint32;
+        pool->get_fn[i] = key_cmp_uint32;
+        pool->get_const_fn[i] = key_cmp_const_uint32;
+    } else if (flags & RDB_KINT64) {
+        pool->fn[i] = key_cmp_int64;
+        pool->get_fn[i] = key_cmp_int64;
+        pool->get_const_fn[i] = key_cmp_const_int64;
+    } else if (flags & RDB_KUINT16) {
+        pool->fn[i] = key_cmp_uint64;
+        pool->get_fn[i] = key_cmp_uint64;
+        pool->get_const_fn[i] = key_cmp_const_uint64;
+    } else if (flags & RDB_KINT16) {
+        pool->fn[i] = key_cmp_int16;
+        pool->get_fn[i] = key_cmp_int16;
+        pool->get_const_fn[i] = key_cmp_const_int16;
+    } else if (flags & RDB_KUINT16) {
+        pool->fn[i] = key_cmp_uint16;
+        pool->get_fn[i] = key_cmp_uint16;
+        pool->get_const_fn[i] = key_cmp_const_uint16;
+    } else if (flags & RDB_KINT8) {
+        pool->fn[i] = key_cmp_int8;
+        pool->get_fn[i] = key_cmp_int8;
+        pool->get_const_fn[i] = key_cmp_const_int8;
+    } else if (flags & RDB_KUINT8) {
+        pool->fn[i] = key_cmp_uint8;
+        pool->get_fn[i] = key_cmp_uint8;
+        pool->get_const_fn[i] = key_cmp_const_uint8;
+    } else if (flags & RDB_KINT128) {
+        pool->fn[i] = key_cmp_int128;
+        pool->get_fn[i] = key_cmp_int128;
+        pool->get_const_fn[i] = key_cmp_const_int128;
+    } else if (flags & RDB_KUINT128) {
+        pool->fn[i] = key_cmp_uint128;
+        pool->get_fn[i] = key_cmp_uint128;
+        pool->get_const_fn[i] = key_cmp_const_uint128;
+    } else if (flags & RDB_KSTR) {
+        pool->fn[i] = key_cmp_str;
+        pool->get_fn[i] = key_cmp_str; //same
+        pool->get_const_fn[i] = key_cmp_str; //same
+    } else if (flags & RDB_KPSTR) {
+        pool->fn[i] = key_cmp_str_p;
+        pool->get_fn[i] = key_cmp_const_str_p;
+        pool->get_const_fn[i] = key_cmp_const_str_p;
+    //else if (FLAGS & RDB_KTME)    pool->fn[0] = keyCompareTME;
+    //else if (FLAGS & RDB_KTMA)    pool->fn[0] = keyCompareTMA;
+    } else if (flags & RDB_NOKEYS) {
+        pool->fn[i] = NULL;
+        pool->get_fn[i] = NULL;
+        pool->get_const_fn[i] = NULL;
+    } else {
+        return -1;
+    }
+    return 0;
+}
 
 /// Add a new pool to our pool chain
 rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset, int FLAGS, void *compare_fn)
@@ -192,30 +258,12 @@ rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset, int FL
 
     strcpy (pool->name, poolName);
     
-    if (compare_fn)                 pool->fn[0] = compare_fn;
-    else if (FLAGS & RDB_KINT32)    pool->fn[0] = key_cmp_int32;
-    else if (FLAGS & RDB_KUINT32)   pool->fn[0] = key_cmp_uint32;
-    else if (FLAGS & RDB_KINT64)    pool->fn[0] = key_cmp_int64;
-    else if (FLAGS & RDB_KUINT64)   pool->fn[0] = key_cmp_uint64;
-    else if (FLAGS & RDB_KINT16)    pool->fn[0] = key_cmp_int16;
-    else if (FLAGS & RDB_KUINT16)   pool->fn[0] = key_cmp_uint16;
-    else if (FLAGS & RDB_KINT8)     pool->fn[0] = key_cmp_int8;
-    else if (FLAGS & RDB_KUINT8)    pool->fn[0] = key_cmp_uint8;
-    else if (FLAGS & RDB_KINT128)   pool->fn[0] = key_cmp_int128;
-    else if (FLAGS & RDB_KUINT128)  pool->fn[0] = key_cmp_uint128;
-    else if (FLAGS & RDB_KSTR)      pool->fn[0] = key_cmp_str;
-    else if (FLAGS & RDB_KPSTR)     pool->fn[0] = key_cmp_str_p;
-    //else if (FLAGS & RDB_KTME)    pool->fn[0] = keyCompareTME;
-    //else if (FLAGS & RDB_KTMA)    pool->fn[0] = keyCompareTMA;
-    else if (FLAGS & RDB_NOKEYS)    pool->fn[0] = NULL;
-    else {
+    if (-1 == set_pool_fn_pointers(pool, 0, FLAGS, compare_fn)){
         rdb_error ("RDB Fatal: pool registration without type or matching compare fn");
         pool_root = pool->next;
         rdb_free (pool);
         return NULL;
     }
-    if (pool->fn[0] == key_cmp_str_p) pool->get_fn[0] = key_cmp_get_str_p;
-    else pool->get_fn[0] = pool->fn[0];
 
     pool->root[0] = NULL;
     pool->key_offset[0] = sizeof (PP_T) * indexCount + key_offset;
@@ -284,7 +332,11 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
     if (pool->FLAGS[idx] != 0)
         return (rdb_error_value (-3, "Redefinition of used index not allowed"));
 
-    if (compare_fn)                 pool->fn[idx] = compare_fn;
+    if (-1 == set_pool_fn_pointers(pool, idx, FLAGS, compare_fn)){
+        return (rdb_error_value (-4,
+            "Index Registration without valid type or compatr fn. Ignored"));
+    }
+/*    if (compare_fn)                 pool->fn[idx] = compare_fn;
     else if (FLAGS & RDB_KINT32)    pool->fn[idx] = key_cmp_int32;
     else if (FLAGS & RDB_KUINT32)   pool->fn[idx] = key_cmp_uint32;
     else if (FLAGS & RDB_KINT64)    pool->fn[idx] = key_cmp_int64;
@@ -304,9 +356,7 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
     else {
         return (rdb_error_value (-4,
             "Index Registration without valid type or compatr fn"));
-    }
-    if (pool->fn[idx] == key_cmp_str_p) pool->get_fn[idx] = key_cmp_get_str_p;
-    else pool->get_fn[idx] = pool->fn[idx];
+    }*/
 
     pool->root[idx] = NULL;
     pool->key_offset[idx] = sizeof (PP_T) * pool->indexCount + key_offset;
@@ -320,41 +370,90 @@ int key_cmp_int32 (int32_t *old, int32_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); // 8% lookup boost :)
 }
+int key_cmp_const_int32 (int32_t *old, int32_t new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); // 8% lookup boost :)
+}
+
 int key_cmp_uint32 (uint32_t *old, uint32_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
+int key_cmp_const_uint32 (uint32_t *old, uint32_t new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}
+
 int key_cmp_int16 (int16_t *old, int16_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
+int key_cmp_const_int16 (int16_t *old, int new)
+{   return 0;
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}
+
 int key_cmp_uint16 (uint16_t *old, uint16_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
+int key_cmp_const_uint16 (uint16_t *old, unsigned int new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}
+
 int key_cmp_int8 (int8_t *old, int8_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
+int key_cmp_const_int8 (int8_t *old, int new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}
+
 int key_cmp_uint8 (uint8_t *old, uint8_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
+int key_cmp_const_uint8 (uint8_t *old, unsigned int new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}
+
 int key_cmp_int64 (int64_t *old, int64_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
+int key_cmp_const_int64 (int64_t *old, int64_t new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}
+
 int key_cmp_uint64 (uint64_t *old, uint64_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
+int key_cmp_const_uint64 (uint64_t *old, uint64_t new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}
+
 int key_cmp_int128 (__int128_t *old, __int128_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
+int key_cmp_const_int128 (__int128_t *old, __int128_t new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}
+
 int key_cmp_uint128 (__uint128_t *old, __uint128_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
+}
+int key_cmp_const_uint128 (__uint128_t *old, __uint128_t new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
 //TODO add 256 bit types
 
@@ -368,7 +467,7 @@ int key_cmp_str_p (char **old, char **new)
 {
     return strcmp ( *new, *old);
 }
-int key_cmp_get_str_p (char **old, char *new)
+int key_cmp_const_str_p (char **old, char *new)
 {
     return strcmp ( new, *old);
 }
@@ -985,9 +1084,7 @@ void   *_rdb_get (rdb_pool_t *pool, int index, void *data, void *start, int part
     if ((pool->FLAGS[index] & RDB_BTREE) == RDB_BTREE) {
 
         if (pool->root[index] == NULL) {
-#ifdef DEBUG
-            printout("GetFail - pool=%s, Null rool node\n",pool->name);
-#endif
+            debug("GetFail - pool=%s, Null rool node\n",pool->name);
             return (NULL);
         }
         else {
@@ -1001,11 +1098,10 @@ void   *_rdb_get (rdb_pool_t *pool, int index, void *data, void *start, int part
 #ifdef DEBUG
             key_cmp_dbg (pool, index, dataHead + pool->key_offset[index], data);
 #endif
-            if ((rc = pool->get_fn[index] (/*pool, index,*/ dataHead + pool->key_offset[index],
-                                  (void *) data)) < 0) {
-            //if ((rc = keyCompare (pool, index, dataHead + pool->key_offset[index], data, 1,
-            //                      partial)) < 0) {
+            if ((rc = pool->get_fn[index] (dataHead + pool->key_offset[index],
+                    (void *) data)) < 0) {
                 // left side
+
                 debug("Left Get\n");
 
                 if (ppk->left == NULL) {
@@ -1013,9 +1109,9 @@ void   *_rdb_get (rdb_pool_t *pool, int index, void *data, void *start, int part
                 }
                 else
                     return (_rdb_get (pool, index, data, ppk->left, partial));
-            }
-            else if (rc > 0) {
-                //right side
+            } else if (rc > 0) {
+                //i right side
+
                 debug("Right Get\n");
 
                 if (ppk->right == NULL) {
@@ -1029,9 +1125,56 @@ void   *_rdb_get (rdb_pool_t *pool, int index, void *data, void *start, int part
                 return (dataHead);              // multiple keys n tree form not supported! if we here, we found out needle
             }
         }
-
     }
+    return NULL;                                //should never eet here
+}
 
+void   *_rdb_get_const (rdb_pool_t *pool, int index, __int128_t value, void *start, int partial)
+{
+    PP_T   *ppk;
+    int     rc;
+    void   *dataHead;
+
+    if ((pool->FLAGS[index] & RDB_BTREE) == RDB_BTREE) {
+
+        if (pool->root[index] == NULL) {
+            debug("GetFail - pool=%s, Null rool node\n",pool->name);
+            return (NULL);
+        }
+        else {
+            set_pointers (pool, index, start, &ppk, &dataHead);
+
+#ifdef DEBUG
+            key_cmp_dbg (pool, index, dataHead + pool->key_offset[index], data);
+#endif
+            if ((rc = pool->get_const_fn[index] (dataHead + 
+                    pool->key_offset[index], value)) < 0) {
+                // left side
+
+                debug("Left Get\n");
+
+                if (ppk->left == NULL) {
+                    return (NULL);
+                }
+                else
+                    return (_rdb_get_const (pool, index, value, ppk->left, partial));
+            } else if (rc > 0) {
+                //i right side
+
+                debug("Right Get\n");
+
+                if (ppk->right == NULL) {
+                    return (NULL);
+                }
+                else
+                    return (_rdb_get_const (pool, index, value, ppk->right, partial));
+            }
+            else {
+                debug("Get:Done\n");
+                return (dataHead);              // multiple keys n tree form not supported! if we here, we found out needle
+            }
+        }
+    }
     return NULL;                                //should never eet here
 }
 
@@ -1040,6 +1183,12 @@ void   *rdb_get (rdb_pool_t *pool, int idx, void *data)
 {
     debug("Get:pool=%s,idx=%d", pool->name, idx);
     return _rdb_get (pool, idx, data, NULL, 0);
+}
+
+void   *rdb_get_const (rdb_pool_t *pool, int idx, __int128_t value)
+{
+    debug("Get:pool=%s,idx=%d", pool->name, idx);
+    return _rdb_get_const (pool, idx, value, NULL, 0);
 }
 
 void   *_rdb_get_neigh (rdb_pool_t *pool, int index, void *data, void *start, int partial,

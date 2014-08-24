@@ -128,11 +128,12 @@ typedef struct RDB_POOLS {
     unsigned int 	key_offset[RDB_POOL_MAX_IDX];
 
     // Flags for this pool. bitwise - one per index (globals use index zero)
-    unsigned int 	FLAGS[RDB_POOL_MAX_IDX];       	
+    uint32_t 	FLAGS[RDB_POOL_MAX_IDX];       	
 
     // Fn() pointer for compare operation
     int32_t 	 	(*fn[RDB_POOL_MAX_IDX])();
     int32_t 	 	(*get_fn[RDB_POOL_MAX_IDX])();
+    int32_t 	 	(*get_const_fn[RDB_POOL_MAX_IDX])();
 
     pthread_mutex_t write_mutex;
     pthread_mutex_t read_mutex;
@@ -158,6 +159,7 @@ int         rdb_unlock(rdb_pool_t *pool) ;
 int         rdb_insert (rdb_pool_t *pool, void *data);
 int         rdb_insert_one (rdb_pool_t *pool, int index, void *data);
 void       *rdb_get (rdb_pool_t *pool, int idx, void *data);
+void       *rdb_get_const (rdb_pool_t *pool, int idx, __int128_t value);
 void       *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after);
 void        rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
                 void *fn_data, void del_fn(void *, void *), void *del_data);
@@ -170,7 +172,6 @@ void        rdb_dump (rdb_pool_t *pool, int index);
 
 int         key_cmp_str (char *old, char *);
 int         key_cmp_str_p (char **old, char **);
-int         key_cmp_get_str_p (char **old, char *);
 int         key_cmp_int8 (int8_t *old, int8_t *);
 int         key_cmp_uint8 (uint8_t *old, uint8_t *);
 int         key_cmp_int16 (int16_t *old, int16_t *);
@@ -181,6 +182,21 @@ int         key_cmp_int64 (int64_t *old, int64_t *);
 int         key_cmp_uint64 (uint64_t *old, uint64_t *);
 int         key_cmp_int128 (__int128_t *old, __int128_t *);
 int         key_cmp_uint128 (__uint128_t *old, __uint128_t *);
+
+//This is the only one where get = insert...
+//int         key_cmp_str (char *old, char *);
+int         key_cmp_const_str_p (char **old, char *);
+int         key_cmp_const_int8 (int8_t *old, int);
+int         key_cmp_const_uint8 (uint8_t *old, unsigned int);
+int         key_cmp_const_int16 (int16_t *old, int);
+int         key_cmp_const_uint16 (uint16_t *old, unsigned int);
+int         key_cmp_const_int32 (int32_t *old, int32_t);
+int         key_cmp_const_uint32 (uint32_t *old, uint32_t);
+int         key_cmp_const_int64 (int64_t *old, int64_t);
+int         key_cmp_const_uint64 (uint64_t *old, uint64_t);
+int         key_cmp_const_int128 (__int128_t *old, __int128_t);
+int         key_cmp_const_uint128 (__uint128_t *old, __uint128_t);
+
 //int keyCompareTME (struct timeval *old, struct timeval *);
 //int keyCompareTMA (TVA *old, TVA *);
 //int keyCompare4U32A (U32a *old, U32a *);
