@@ -1314,7 +1314,7 @@ rfeStart:
  */
 
 //int _rdbForEach (rdb_pool_t *pool, int index, int fn (void *, void *), void *data, void del_fn(void *, void*),void *delfn_data, void *start, void *parent, int side, void **resumePtr)
-void rdbi_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
+void rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
          void *fn_data, void del_fn(void *, void *), void *del_data)
 {
     void        *resumePtr;
