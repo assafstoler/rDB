@@ -524,6 +524,11 @@ inline void set_pointers (
 }
 
 // TODO: Bring this up-to-date
+// Note: type casting used to 
+// 1) hash compiler about identcal type warnings, like 
+// uint32 and unisnged long ...
+// 2) handle int32 as long, since long is 32 bit on 16, 32 and 64 bit machines
+//
 void _rdb_dump (rdb_pool_t *pool, int index, void *start)
 {
     void  **searchNext;
@@ -559,49 +564,59 @@ void _rdb_dump (rdb_pool_t *pool, int index, void *start)
 
         switch (pool->FLAGS[index] & (RDB_KEYS)) {
             case RDB_KPSTR:
-                info ("Dump_ps: %s (%p)\n", key->pStr,  &key->pStr);  //searchPrev);
+                info ("%s\n", key->pStr);
                 break;
 
             case RDB_KSTR:
-                info ("Dump_s : %s\n", &key->str);
+                info ("%s\n", &key->str);
                 break;
 
             case RDB_KINT8:
-                info ("Dump_i8 : %d\n", key->i8);
+                info ("%hhd\n", key->i8);
                 break;
 
             case RDB_KINT16:
-                info ("Dump_i16 : %d\n", key->i16);
+                info ("%hd\n", key->i16);
                 break;
 
             case RDB_KINT32:
-                info ("Dump_i32 : %ld\n", (long) key->i32);
+                info ("%ld\n", (long) key->i32);
                 break;
 
             case RDB_KINT64:
-                info ("Dump_i64 : %lld\n", (long long) key->i64);
+                info ("%lld\n", (long long int) key->i64);
                 break;
 
             case RDB_KUINT8:
-                info ("Dump_u8 : %u\n", key->u8);
+                info ("%hhu\n", key->u8);
                 break;
 
             case RDB_KUINT16:
-                info ("Dump_u16 : %u\n", key->u16);
+                info ("%hu\n", key->u16);
                 break;
 
             case RDB_KUINT32:
-                info ("Dump_u32 : %lu\n", (unsigned long) key->u32);
+                info ("%lu\n", (unsigned long) key->u32);
                 break;
 
             case RDB_KUINT64:
-                info ("Dump_u64 : %llu\n", (unsigned long long) key->u64);
+                info ("%llu\n", (unsigned long long) key->u64);
                 break;
 
+            //TODO: this is a bug, data below may be truncated.
+            //need to craft 128bit decimal print functions.
+            //
             case RDB_KUINT128:
-                info ("Dump_u128 : (%llx)\n", (unsigned long long) key->u128);
+                info ("%llu\n", (unsigned long long) key->u128);
                 break;
 
+            case RDB_KINT128:
+                info ("%lld\n", (long long) key->u128);
+                break;
+            // we can't print custom functions data so we print the address
+            case RDB_KCF:
+                info ("%p\n", key);
+                break;
  /*           case RDB_KTME:
                 printoutalways ("Dump_TME: %ld:%ld\n", key->tv.tv_sec, key->tv.tv_usec);
                 break;
