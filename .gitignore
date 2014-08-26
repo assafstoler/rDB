@@ -1,0 +1,5 @@
+*.[oa]
+CMakeCache*
+CMakeFiles*
+*.cmake
+*.swp
