@@ -529,7 +529,7 @@ inline void set_pointers (
 // uint32 and unisnged long ...
 // 2) handle int32 as long, since long is 32 bit on 16, 32 and 64 bit machines
 //
-void _rdb_dump (rdb_pool_t *pool, int index, void *start)
+void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
 {
     void  **searchNext;
     PP_T   *pp;
@@ -558,64 +558,64 @@ void _rdb_dump (rdb_pool_t *pool, int index, void *start)
         key = (void *) searchNext + pool->key_offset[index];
 
         if (pp->left != NULL) {
-            _rdb_dump (pool, index, pp->left);
+            _rdb_dump (pool, index, separator, pp->left);
             levels--;
         }
 
         switch (pool->FLAGS[index] & (RDB_KEYS)) {
             case RDB_KPSTR:
-                info ("%s\n", key->pStr);
+                info ("%s%s", key->pStr, separator);
                 break;
 
             case RDB_KSTR:
-                info ("%s\n", &key->str);
+                info ("%s%s", &key->str, separator);
                 break;
 
             case RDB_KINT8:
-                info ("%hhd\n", key->i8);
+                info ("%hhd%s", key->i8, separator);
                 break;
 
             case RDB_KINT16:
-                info ("%hd\n", key->i16);
+                info ("%hd%s", key->i16, separator);
                 break;
 
             case RDB_KINT32:
-                info ("%ld\n", (long) key->i32);
+                info ("%ld%s", (long) key->i32, separator);
                 break;
 
             case RDB_KINT64:
-                info ("%lld\n", (long long int) key->i64);
+                info ("%lld%s", (long long int) key->i64, separator);
                 break;
 
             case RDB_KUINT8:
-                info ("%hhu\n", key->u8);
+                info ("%hhu%s", key->u8, separator);
                 break;
 
             case RDB_KUINT16:
-                info ("%hu\n", key->u16);
+                info ("%hu%s", key->u16, separator);
                 break;
 
             case RDB_KUINT32:
-                info ("%lu\n", (unsigned long) key->u32);
+                info ("%lu%s", (unsigned long) key->u32, separator);
                 break;
 
             case RDB_KUINT64:
-                info ("%llu\n", (unsigned long long) key->u64);
+                info ("%llu%s", (unsigned long long) key->u64, separator);
                 break;
 
             //TODO: this is a bug, data below may be truncated.
             //need to craft 128bit decimal print functions.
             //
             case RDB_KUINT128:
-                info ("%llu\n", (unsigned long long) key->u128);
+                info ("%llu%s", (unsigned long long) key->u128, separator);
                 break;
 
             case RDB_KINT128:
-                info ("%lld\n", (long long) key->u128);
+                info ("%lld%s", (long long) key->u128, separator);
                 break;
             // we can't print custom functions data so we print the address
             case RDB_KCF:
-                info ("%p\n", key);
+                info ("%p%s", key, separator);
                 break;
  /*           case RDB_KTME:
                 printoutalways ("Dump_TME: %ld:%ld\n", key->tv.tv_sec, key->tv.tv_usec);
@@ -638,7 +638,7 @@ void _rdb_dump (rdb_pool_t *pool, int index, void *start)
 #endif
 
         if (pp->right != NULL) {
-            _rdb_dump (pool, index, pp->right);
+            _rdb_dump (pool, index, separator, pp->right);
             levels--;
         }
     }
@@ -660,12 +660,12 @@ int rdb_unlock(rdb_pool_t *pool)
 
 // Dump an entire pool to stdout. only the selected index field will be
 // printed out. Also calculates tree depth...
-void rdb_dump (rdb_pool_t *pool, int index) {
+void rdb_dump (rdb_pool_t *pool, int index, char *separator) {
 
     if (pool->root[index] == NULL) return;
 
     if ((pool->FLAGS[index] & (RDB_KEYS)) != 0)
-        _rdb_dump (pool, index, NULL);
+        _rdb_dump (pool, index, separator, NULL);
 }
 
 int _rdb_insert (

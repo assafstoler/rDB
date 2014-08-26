@@ -168,7 +168,7 @@ void       *rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data);
 int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
 
 //void        _rdb_dump (rdb_pool_t *, int index, void *start);
-void        rdb_dump (rdb_pool_t *pool, int index);
+void        rdb_dump (rdb_pool_t *pool, int index, char *separator);
 
 int         key_cmp_str (char *old, char *);
 int         key_cmp_str_p (char **old, char **);

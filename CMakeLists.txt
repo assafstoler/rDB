@@ -30,11 +30,11 @@ set_tests_properties (test_register_pools
 
 add_test (test_data_16_0 tests/rdb_test -t3 -l2 -i0)
 set_tests_properties (test_data_16_0
-    PROPERTIES PASS_REGULAR_EXPRESSION "AAAA\nAAAB\nAABA\nAABB\nABAA\nABAB\nABBA\nABBB\nBAAA\nBAAB\nBABA\nBABB\nBBAA\nBBAB\nBBBA\nBBBB")
+    PROPERTIES PASS_REGULAR_EXPRESSION "AAAA,AAAB,AABA,AABB,ABAA,ABAB,ABBA,ABBB,BAAA,BAAB,BABA,BABB,BBAA,BBAB,BBBA,BBBB,")
 
 add_test (test_data_16_1 tests/rdb_test -t3 -l2 -i1)
 set_tests_properties (test_data_16_1
-    PROPERTIES PASS_REGULAR_EXPRESSION "aaaa\naaab\naaba\naabb\nabaa\nabab\nabba\nabbb\nbaaa\nbaab\nbaba\nbabb\nbbaa\nbbab\nbbba\nbbbb")
+    PROPERTIES PASS_REGULAR_EXPRESSION "aaaa,aaab,aaba,aabb,abaa,abab,abba,abbb,baaa,baab,baba,babb,bbaa,bbab,bbba,bbbb,")
 
 ########### install files ###############
 #install(TARGETS rdb_beta DESTINATION /var/alertlogic/lib)

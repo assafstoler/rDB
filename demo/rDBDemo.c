@@ -86,7 +86,7 @@ int simple_demo(rdb_pool_t *pool) {
         error("one or more index failed insertion");
 
  	info("We will now dump the tree, containing one record");
-    rdb_dump(pool,1);
+    rdb_dump(pool,1,"\n");
 
     // rDB is smart enought to know it needs to free address_ptr before it free
     // the actual data node. (since it's an indexed field) thus helping avoid
@@ -97,7 +97,7 @@ int simple_demo(rdb_pool_t *pool) {
 
     // The pool is now empty again... ready for our next demo
     // As such, the dump below will produce no data
-    rdb_dump(pool,0);
+    rdb_dump(pool,0,"\n");
 
     return 0;
 }

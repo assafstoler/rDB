@@ -412,7 +412,7 @@ int main(int argc, char *argv[]) {
         rdb_init();
         register_pools();
         add_test_data(pool1,loops);
-        rdb_dump(pool1,dump);
+        rdb_dump(pool1,dump,",");
     }
 
     exit(0);
