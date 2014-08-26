@@ -19,8 +19,8 @@
 #define RDB_KUINT64	(1 << 12)	// Key is an unsigned 64 bit integer
 #define RDB_KINT128	(1 << 13) 
 #define RDB_KUINT128 (1 << 14)  // Key is an unsigned 128 bit integer - usefull for IPv6 !
-//#define RDB_KINT256  (1 << 15)  // Key is an signed 256 bit integer.
-//#define RDB_KUINT256 (1 << 16)  // Key is an unsigned 256 bit integer.
+#define RDB_KINT256  (1 << 15)  // Key is an signed 256 bit integer.
+#define RDB_KUINT256 (1 << 16)  // Key is an unsigned 256 bit integer.
 
 // special case keys
 #define RDB_KTME	(1 << 25)	// Key is a time_t structure

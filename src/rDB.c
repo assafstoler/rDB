@@ -195,7 +195,7 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
         pool->fn[i] = key_cmp_int64;
         pool->get_fn[i] = key_cmp_int64;
         pool->get_const_fn[i] = key_cmp_const_int64;
-    } else if (flags & RDB_KUINT16) {
+    } else if (flags & RDB_KUINT64) {
         pool->fn[i] = key_cmp_uint64;
         pool->get_fn[i] = key_cmp_uint64;
         pool->get_const_fn[i] = key_cmp_const_uint64;
@@ -970,8 +970,8 @@ int rdb_insert (rdb_pool_t *pool, void *data)
     int     indexCount;
     int     rc = 0;
   
-    if (data != NULL)
-        for (indexCount = 0; indexCount < pool->indexCount; indexCount++) 
+    if (data != NULL) 
+        for (indexCount = 0; indexCount < pool->indexCount; indexCount++)
             (_rdb_insert (pool, data, pool->root[indexCount], 
                 indexCount, NULL, 0) < 0) ? rc : rc++;
     else
