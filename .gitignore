@@ -3,3 +3,4 @@ CMakeCache*
 CMakeFiles*
 *.cmake
 *.swp
+Testing/
