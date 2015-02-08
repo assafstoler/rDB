@@ -186,14 +186,14 @@ int         key_cmp_uint128 (__uint128_t *old, __uint128_t *);
 //This is the only one where get = insert...
 //int         key_cmp_str (char *old, char *);
 int         key_cmp_const_str_p (char **old, char *);
-int         key_cmp_const_int8 (int8_t *old, int);
-int         key_cmp_const_uint8 (uint8_t *old, unsigned int);
-int         key_cmp_const_int16 (int16_t *old, int);
-int         key_cmp_const_uint16 (uint16_t *old, unsigned int);
-int         key_cmp_const_int32 (int32_t *old, int32_t);
-int         key_cmp_const_uint32 (uint32_t *old, uint32_t);
-int         key_cmp_const_int64 (int64_t *old, int64_t);
-int         key_cmp_const_uint64 (uint64_t *old, uint64_t);
+int         key_cmp_const_int8 (int8_t *old, __int128_t);
+int         key_cmp_const_uint8 (uint8_t *old, __uint128_t);
+int         key_cmp_const_int16 (int16_t *old, __int128_t);
+int         key_cmp_const_uint16 (uint16_t *old, __uint128_t);
+int         key_cmp_const_int32 (int32_t *old, __int128_t);
+int         key_cmp_const_uint32 (uint32_t *old, __uint128_t);
+int         key_cmp_const_int64 (int64_t *old, __int128_t);
+int         key_cmp_const_uint64 (uint64_t *old, __uint128_t);
 int         key_cmp_const_int128 (__int128_t *old, __int128_t);
 int         key_cmp_const_uint128 (__uint128_t *old, __uint128_t);
 

@@ -76,5 +76,9 @@ add_test (test_data_16_11 tests/rdb_test -t3 -l2 -i11)
 set_tests_properties (test_data_16_11
     PROPERTIES PASS_REGULAR_EXPRESSION "-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,")
 
+add_test (test_data_get tests/rdb_test -t4)
+set_tests_properties (test_data_get
+    PROPERTIES PASS_REGULAR_EXPRESSION "DAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\n")
+
 ########### install files ###############
 #install(TARGETS rdb_beta DESTINATION /usr/loca/bin)

@@ -41,7 +41,7 @@
 #define rdb_alloc(a) kmalloc (a, GFP_KERNEL);
 
 #else
-// Build a UserSpace Library
+// Build a User-Space Library
 
 #include <stdio.h>                              //printf,
 #include <stdlib.h>                             //exit,
@@ -175,7 +175,7 @@ rdb_pool_t *rdb_find_pool_by_name (char *poolName)
 
     return (NULL);
 }
-// rDB Internal. this will set the various compate functionsfor the rDB
+// rDB Internal. this will set the various compate functions for the rDB
 // data maganment routines.
 int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
 
@@ -387,18 +387,18 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
 // Below is a set of self explanatory compare functions...
 int key_cmp_int32 (int32_t *old, int32_t *new)
 {
-    return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); // 8% lookup boost :)
+    return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_int32 (int32_t *old, int32_t new)
+int key_cmp_const_int32 (int32_t *old, __int128_t new)
 {
-    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); // 8% lookup boost :)
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
 
 int key_cmp_uint32 (uint32_t *old, uint32_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_uint32 (uint32_t *old, uint32_t new)
+int key_cmp_const_uint32 (uint32_t *old, __uint128_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -407,8 +407,8 @@ int key_cmp_int16 (int16_t *old, int16_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_int16 (int16_t *old, int new)
-{   return 0;
+int key_cmp_const_int16 (int16_t *old, __int128_t new)
+{   
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
 
@@ -416,7 +416,7 @@ int key_cmp_uint16 (uint16_t *old, uint16_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_uint16 (uint16_t *old, unsigned int new)
+int key_cmp_const_uint16 (uint16_t *old, __uint128_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -425,7 +425,7 @@ int key_cmp_int8 (int8_t *old, int8_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_int8 (int8_t *old, int new)
+int key_cmp_const_int8 (int8_t *old, __int128_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -434,7 +434,7 @@ int key_cmp_uint8 (uint8_t *old, uint8_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_uint8 (uint8_t *old, unsigned int new)
+int key_cmp_const_uint8 (uint8_t *old, __uint128_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -443,7 +443,7 @@ int key_cmp_int64 (int64_t *old, int64_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_int64 (int64_t *old, int64_t new)
+int key_cmp_const_int64 (int64_t *old, __int128_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -452,7 +452,7 @@ int key_cmp_uint64 (uint64_t *old, uint64_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_uint64 (uint64_t *old, uint64_t new)
+int key_cmp_const_uint64 (uint64_t *old, __uint128_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }

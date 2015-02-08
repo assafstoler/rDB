@@ -71,7 +71,7 @@ typedef struct test_data_s {
     // Soon, people, Soon...
     //type_u256   ui256;
     //type_256    i256;
-    // Used defined index with custon compare fn.
+    // User defined index with custon compare fn.
     // for test we will use 2 fields
     int32_t     ud1;
     char        ud2[5];
@@ -319,9 +319,9 @@ int add_test_data (rdb_pool_t *pool, int loops) {
                     *(ptd->string_ptr+1)='a' + c;
                     *(ptd->string_ptr+2)='a' + b;
 					*(ptd->string_ptr+3)='a' + a;
-                    // We could have calculated the various LOOPS powers out
+                    // We could have pre-calculated the various LOOPS powers out
                     // of this loop, to increase perfoemance, but not an issue
-                    // for this demo
+                    // for this test
 					ptd->ui128 = d + (c * loops) + (b * pow(loops, 2)) + 
                                                         (a * pow(loops, 3)) ;
                     ptd->i128 = ptd->ui128 * -1;
@@ -393,6 +393,7 @@ int main(int argc, char *argv[]) {
 
         // repeat twice to make sure we can re_init after close    	
         rdb_init();
+
         rdb_clean();
 
         info("Ok");
@@ -411,8 +412,57 @@ int main(int argc, char *argv[]) {
 
         rdb_init();
         register_pools();
-        add_test_data(pool1,loops);
+        if (-1 == add_test_data(pool1,loops))
+            fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
+
         rdb_dump(pool1,dump,",");
+
+    } else if (test == 4) {
+        
+        // insert 256 records, print via index
+        // Get record by multiple size constants
+
+        rdb_init();
+        register_pools();
+        add_test_data(pool1,4);
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,2, 3)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,4, 3)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,6, 3)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,8, 3)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,10, 3)) ? "FAIL" : ptd->string );
+
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,2, 3L)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,4, 3L)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,6, 3L)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,8, 3L)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,10, 3L)) ? "FAIL" : ptd->string );
+        
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,2, 3LL)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,4, 3LL)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,6, 3LL)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,8, 3LL)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,10, 3LL)) ? "FAIL" : ptd->string );
+        
+
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,3,-3)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,5,-3)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,7,-3)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,9,-3)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,11,-3)) ? "FAIL" : ptd->string );
+
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,3,-3L)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,5,-3L)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,7,-3L)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,9,-3L)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,11,-3L)) ? "FAIL" : ptd->string );
+        
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,3,-3LL)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,5,-3LL)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,7,-3LL)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,9,-3LL)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,11,-3LL)) ? "FAIL" : ptd->string );
+        rdb_clean();
+
     }
 
     exit(0);
