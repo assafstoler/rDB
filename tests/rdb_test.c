@@ -202,7 +202,8 @@ int um_multi_record_insert_demo(rdb_pool_t *pool) {
 // It's a good programing disciplan to define a name to the indexes to
 // avoid unexpected behaviour when that happens
 
-int register_pools() {
+
+int register_pool_1() {
 
     pool1 = rdb_register_um_pool("test_pool", 
                             TEST_INDEXES, 
@@ -296,6 +297,110 @@ int register_pools() {
                             RDB_KCF | RDB_KASC | RDB_BTREE,
                             compare_custom_index) == -1) return -1;
 
+    return 0;
+}
+
+int register_pool_2() {
+
+    pool2 = rdb_register_um_pool("copy_pool", 
+                            TEST_INDEXES, 
+                            0, // offset if first index. usually it's zero
+                            RDB_KSTR | RDB_KASC | RDB_BTREE,
+                            NULL);
+    if (pool2 == NULL) return -1;
+
+    // Registering the other indexes for our data structure.
+	if (rdb_register_um_idx(pool2,
+                            IDX_PSTR, 
+                            (void *) &td.string_ptr- (void *) &td.string,
+                            RDB_KPSTR | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+	
+    if (rdb_register_um_idx(pool2,
+                            IDX_UI8, 
+                            (void *) &td.ui8 - (void *) &td.string,
+                            RDB_KUINT8 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_I8, 
+                            (void *) &td.i8 - (void *) &td.string,
+                            RDB_KINT8 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_UI16, 
+                            (void *) &td.ui16 - (void *) &td.string,
+                            RDB_KUINT16 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_I16, 
+                            (void *) &td.i16 - (void *) &td.string,
+                            RDB_KINT16 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_UI32, 
+                            (void *) &td.ui32 - (void *) &td.string,
+                            RDB_KUINT32 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_I32, 
+                            (void *) &td.i32 - (void *) &td.string,
+                            RDB_KINT32 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_UI64, 
+                            (void *) &td.ui64 - (void *) &td.string,
+                            RDB_KUINT64 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_I64, 
+                            (void *) &td.i64 - (void *) &td.string,
+                            RDB_KINT64 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_UI128, 
+                            (void *) &td.ui128 - (void *) &td.string,
+                            RDB_KUINT128 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_I128, 
+                            (void *) &td.i128 - (void *) &td.string,
+                            RDB_KINT128 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+/*    if (rdb_register_um_idx(pool2,
+                            IDX_UI256, 
+                            (void *) &td.ui256 - (void *) &td.string,
+                            RDB_KUINT256 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_I256, 
+                            (void *) &td.i256 - (void *) &td.string,
+                            RDB_KINT256 | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) return -1;
+*/
+    if (rdb_register_um_idx(pool2,
+                            IDX_CUSTOM, 
+                            (void *) &td.ud1 - (void *) &td.string,
+                            RDB_KCF | RDB_KASC | RDB_BTREE,
+                            compare_custom_index) == -1) return -1;
+
+    return 0;
+}
+
+int register_pools() {
+
+    if (-1 == register_pool_1()) fatal("Failed registring pool 1");
+    if (-1 == register_pool_2()) fatal("Failed registring pool 2");
     return 0;
 }
 
@@ -424,7 +529,8 @@ int main(int argc, char *argv[]) {
 
         rdb_init();
         register_pools();
-        add_test_data(pool1,4);
+        if (-1 == add_test_data(pool1,4))
+            fatal(rdb_error_string);
         info ("%s", NULL == (ptd=rdb_get_const(pool1,2, 3)) ? "FAIL" : ptd->string );
         info ("%s", NULL == (ptd=rdb_get_const(pool1,4, 3)) ? "FAIL" : ptd->string );
         info ("%s", NULL == (ptd=rdb_get_const(pool1,6, 3)) ? "FAIL" : ptd->string );
@@ -462,6 +568,34 @@ int main(int argc, char *argv[]) {
         info ("%s", NULL == (ptd=rdb_get_const(pool1,9,-3LL)) ? "FAIL" : ptd->string );
         info ("%s", NULL == (ptd=rdb_get_const(pool1,11,-3LL)) ? "FAIL" : ptd->string );
         rdb_clean();
+
+    } else if (test == 5) {
+        
+        // This will test tree rotation on data inertion and deletion.
+        // To avoid coming up with data, we use add_test_data() to populate pool1 and
+        // selectivly morve records to pool2 (and back) in designed order to trigger the 
+        // conditions we aim to test. NOTE: inserting and deleting a data record from a 
+        // tree does not destroy the data record (when using rdb_delete() and rdb_insert(). 
+        //
+        // be ware, deleting records using an iterative function will also attempt to free data.
+        // one can cancel this by supplying a dummy delete_fn()). 
+
+        rdb_init();
+        register_pools();
+        if (-1 == add_test_data(pool1,2))
+            fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
+        
+        // here we have pool1 filled with 16 records (index 2 = [0-15]).
+        //
+        //
+
+        rdb_insert (pool2, rdb_delete_const (pool1, 2, 8));
+        rdb_move_const (pool2, pool1, 2, 10);
+
+        rdb_dump(pool1, 2, ",");
+        info("");
+        rdb_dump(pool2, 2, ",");
+        info("");
 
     }
 

@@ -166,6 +166,9 @@ void        rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
 void        rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data);
 void       *rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data);
 int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
+void       *rdb_delete_const (rdb_pool_t *pool, int idx, __int128_t value);
+void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __int128_t value);
+void       *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data);
 
 //void        _rdb_dump (rdb_pool_t *, int index, void *start);
 void        rdb_dump (rdb_pool_t *pool, int index, char *separator);

@@ -109,10 +109,10 @@ void rdb_init (void)
     pool_root = NULL;
 }
 
-// Store internal error string to allow used to retrieve it, and return with
+// Store internal error string to allow user to retrieve it, and return with
 // user set value. typical use will look like
-// return rdv_error_value(-1, "failed to dance this dance");
-// library used can later print that string similar to errno/errstr.
+// Example: return rdv_error_value(-1, "failed to dance this dance");
+// library user can later print that string to errno/errstr or similar.
 int rdb_error_value (int rv, char *err)
 {
 #ifdef KM
@@ -614,6 +614,7 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
                 info ("%lld%s", (long long) key->u128, separator);
                 break;
             // we can't print custom functions data so we print the address
+            // TODO: Consider adding a print-to-str fn() hook to pool, so we can dump custom-index data
             case RDB_KCF:
                 info ("%p%s", key, separator);
                 break;
@@ -960,11 +961,11 @@ int _rdb_insert (
                 }
             }
             else {
-                info ("Skipped due to multiple key on pool %s index %d\n",
+                debug ("Skipped due to multiple key on pool %s index %d\n",
                         pool->name, index);
                 //TODO: give actal data
                 return (rdb_error_value(-1, "Insert index failed due to "
-                        "multiple key in pool")); 
+                        "duplicate key in pool")); 
             }   // multiple keys not yet supported!
         }
 
@@ -1056,6 +1057,7 @@ void   *_rdb_get (
     return NULL;                                //should never get here
 }
 
+/*
 void   *_rdb_get_const (
         rdb_pool_t  *pool, 
         int         index, 
@@ -1105,7 +1107,7 @@ void   *_rdb_get_const (
         }
     }
     return NULL;                                //should never eet here
-}
+}*/
 
 // Find requested data set and return a pointer to it
 // As a special case, if data = null, root node will be returned.
@@ -1118,7 +1120,7 @@ void   *rdb_get (rdb_pool_t *pool, int idx, void *data)
 void   *rdb_get_const (rdb_pool_t *pool, int idx, __int128_t value)
 {
     debug("Get:pool=%s,idx=%d", pool->name, idx);
-    return _rdb_get_const (pool, idx, value, NULL, 0);
+    return _rdb_get/*_const*/ (pool, idx, &value, NULL, 0);
 }
 
 void   *_rdb_get_neigh (
@@ -1373,17 +1375,9 @@ rfeStart:
                         //debug("off = %d add %x, str %s\n",
                         // pool->key_offset[indexCount],
                         // (unsigned) *dataField, *dataField);
-#ifdef KM
-                            if (*dataField) kfree(*dataField);
-#else
-                            if (*dataField) free(*dataField);
-#endif
+                            if (*dataField) rdb_free(*dataField);
                     }
-#ifdef KM
-                    if (dataHead) kfree (dataHead);
-#else
-                    if (dataHead) free (dataHead);
-#endif
+                    if (dataHead) rdb_free (dataHead);
                 }
 
                 return rc;
@@ -1413,7 +1407,7 @@ rfeStart:
     return 0;
 }
 
-/* rdb_terate scans the data pool, in order, by index, calling fn() on each node
+/* rdb_iterate scans the data pool, in order, by index, calling fn() on each node
  * thsy is not null.
  * If fn returns RDB_DB_DELETE_NODE, or if fn is null, the tree node will be 
  * deleted from rDB and del_fn will be called to do it's thing (if not NULL).
@@ -1483,17 +1477,9 @@ void _rdb_flush(
                 //debug("off = %d add %x, str %s\n",
                 //pool->key_offset[indexCount],(unsigned) *dataField,
                 //*dataField);
-#ifdef KM
-                if (*dataField) kfree(*dataField);
-#else
-                if (*dataField) free(*dataField);
-#endif
+                if (*dataField) rdb_free(*dataField);
                 }
-#ifdef KM
-            if (dataHead) kfree (dataHead);
-#else
-            if (dataHead) free (dataHead);
-#endif
+            if (dataHead) rdb_free (dataHead);
         }
     }
 }
@@ -1527,17 +1513,9 @@ void _rdb_flush_list(
                     // debug("off = %d add %x, str %s\n",
                     // pool->key_offset[indexCount],
                     // (unsigned) *dataField, *dataField);
-#ifdef KM
-                        if (*dataField) kfree(*dataField);
-#else
-                        if (*dataField) free(*dataField);
-#endif
+                        if (*dataField) rdb_free(*dataField);
                     }
-#ifdef KM
-                if (dataHead) kfree (dataHead);
-#else
-                if (dataHead) free (dataHead);
-#endif
+                if (dataHead) rdb_free (dataHead);
             }
         }
         while (start != NULL);
@@ -2040,14 +2018,23 @@ retest_delete_cond:
     }
 
     return 0;                                // Should never get here
+}   
+
+void   *rdb_delete_const (rdb_pool_t *pool, int idx, __int128_t value)
+{
+    debug("Get:pool=%s,idx=%d", pool->name, idx);
+    return rdb_delete (pool, idx, &value); //, NULL, 0);
 }
 
+// TODO, make sure rdv_delete works well on trees with both indexed and non-indexed 
+// indexes. ( is that a valid configuration? )
+//
 void   *
 rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data)
 {
 
     int     indexCount;
-    void   *ptr = NULL;                     // NLL to hashh the compiler
+    void   *ptr = NULL;                     // NULL to hash the compiler
 
     if (pool->FLAGS[lookupIndex] & (RDB_NOKEYS)) {
         PP_T   *ppk = NULL,
@@ -2106,6 +2093,17 @@ rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data)
 int rdb_delete_one (rdb_pool_t *pool, int index, void *data)
 {
     return _rdb_delete (pool, index, data, NULL, NULL, 0);
+}
+
+// move data (identified by value const, from source tree to destination tree.
+// data is not copied or reallocated, only trees pointers are updated.
+//
+void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __int128_t value) {
+        rdb_insert (dst_pool, rdb_delete (src_pool, idx, &value));
+}
+
+void       *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data) {
+        rdb_insert (dst_pool, rdb_delete (src_pool, idx, data));
 }
 
 #ifdef KM
