@@ -12,6 +12,16 @@ include_directories ("${PROJECT_SOURCE_DIR}/src")
 link_directories(
 )
 
+INCLUDE(CheckTypeSize)
+
+CHECK_TYPE_SIZE(__uint128_t USE_128_BIT_TYPES)
+if (${USE_128_BIT_TYPES})
+ ADD_DEFINITIONS(-DUSE_128_BIT_TYPES)
+ MESSAGE("Using native 128 bit types")
+else  (${USE_128_BIT_TYPES})
+ MESSAGE("NOT Using native 128 bit types")
+endif (${USE_128_BIT_TYPES})
+
 add_subdirectory(demo)
 add_subdirectory(tests)
 

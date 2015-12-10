@@ -53,11 +53,11 @@ typedef struct test_data_s {
 
     // This is the rDB pointer pack (times # of indexes for this structure) 
     // It is required at to be at the top of a structure to be used with rDB.
-	rdb_bpp_t	pp[TEST_INDEXES]; 
+     rdb_bpp_t pp[TEST_INDEXES]; 
     // Below is user data
     // Strait indexes.
-	char 	    string[5];
-	char 	    *string_ptr;
+     char          string[5];
+     char          *string_ptr;
     uint8_t     ui8;
     int8_t      i8;
     uint16_t    ui16;
@@ -66,8 +66,10 @@ typedef struct test_data_s {
     int32_t     i32;
     uint64_t    ui64;
     int64_t     i64;
+#ifdef USE_128_BIT_TYPES
     __uint128_t ui128;
     __int128_t  i128;
+#endif
     // Soon, people, Soon...
     //type_u256   ui256;
     //type_256    i256;
@@ -120,23 +122,23 @@ int simple_demo(rdb_pool_t *pool) {
 
     pdd=malloc(sizeof(demo_data_t));
     if (!pdd) fatal("fatal: failed allocating data node");
-	info("main addr %p", pdd);	
+     info("main addr %p", pdd);    
 
     // We allocate the address pointer so it can point to a string
-	pdd->address_ptr = malloc(64);
+     pdd->address_ptr = malloc(64);
     if (!pdd->address_ptr) fatal("fatal: failed allocating address_pointer");
     info ("address ptr = %p", pdd->address_ptr);
 
-	strcpy(pdd->name,"Assaf Stoler");
-	strcpy(pdd->address_ptr,"rdb@assafstoler.com");
-	pdd->age=43;
-	pdd->long_value=100000;
+     strcpy(pdd->name,"Assaf Stoler");
+     strcpy(pdd->address_ptr,"rdb@assafstoler.com");
+     pdd->age=43;
+     pdd->long_value=100000;
 
     // Data node is added to the tree, and Indexed.
- 	if (rdb_insert(pool,pdd) != INDEXES) 
+     if (rdb_insert(pool,pdd) != INDEXES) 
         error("one or more index failed insertion");
 
- 	info("We will now dump the tree, containing one record");
+     info("We will now dump the tree, containing one record");
     rdb_dump(pool,1);
 
     // rDB is smart enought to know it needs to free address_ptr before it free
@@ -159,39 +161,39 @@ int simple_demo(rdb_pool_t *pool) {
 
 // Here we will insert 104976 records to the tree, with 4 indexes each
 int um_multi_record_insert_demo(rdb_pool_t *pool) {
-	int rc,a,b,c,d;
-	
+     int rc,a,b,c,d;
+     
     for (a=0; a<LOOPS; a++) {
-		for (b=0; b<LOOPS; b++) {
-			for (c=0; c<LOOPS; c++) {
-				for (d=0; d<LOOPS; d++) {
-					pdd=malloc(sizeof(demo_data_t));
-					if (pdd==NULL) fatal("Allocation error in %s",__FUNCTION__);
-					pdd->address_ptr = calloc(1,16);
-					if (pdd->address_ptr == NULL) fatal("Allocation error in %s",__FUNCTION__);
-					pdd->name[0]='A' + d;
-					pdd->name[1]='A' + c;
-					pdd->name[2]='A' + b;
-					pdd->name[3]='A' + a;
-					pdd->name[4]=0;
-					*(pdd->address_ptr)='a' + d;
+          for (b=0; b<LOOPS; b++) {
+               for (c=0; c<LOOPS; c++) {
+                    for (d=0; d<LOOPS; d++) {
+                         pdd=malloc(sizeof(demo_data_t));
+                         if (pdd==NULL) fatal("Allocation error in %s",__FUNCTION__);
+                         pdd->address_ptr = calloc(1,16);
+                         if (pdd->address_ptr == NULL) fatal("Allocation error in %s",__FUNCTION__);
+                         pdd->name[0]='A' + d;
+                         pdd->name[1]='A' + c;
+                         pdd->name[2]='A' + b;
+                         pdd->name[3]='A' + a;
+                         pdd->name[4]=0;
+                         *(pdd->address_ptr)='a' + d;
                     *(pdd->address_ptr+1)='a' + c;
                     *(pdd->address_ptr+2)='a' + b;
-					*(pdd->address_ptr+3)='a' + a;
+                         *(pdd->address_ptr+3)='a' + a;
                     // We could have calculated the various LOOPS powers out
                     // of this loop, to increase perfoemance, but not an issue
                     // for this demo
-					pdd->age= d + (c * LOOPS) + (b * pow(LOOPS, 2)) + (a * pow(LOOPS, 3)) ;
-					pdd->long_value=pow(LOOPS, 4) - pdd->age;
-					rc=rdb_insert(pool,pdd);
+                         pdd->age= d + (c * LOOPS) + (b * pow(LOOPS, 2)) + (a * pow(LOOPS, 3)) ;
+                         pdd->long_value=pow(LOOPS, 4) - pdd->age;
+                         rc=rdb_insert(pool,pdd);
                     // We check that rDB was able to link all indexes. rDB will
                     // simply skip indexes it can not link-in (due to 
                     // duplicates, for example)
-					if (rc!=INDEXES) fatal ("%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
-				}
-			}
-		}
-	}
+                         if (rc!=INDEXES) fatal ("%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
+                    }
+               }
+          }
+     }
     info ("we Just completed %.0f insertions (%.0f records  * 4 indexes)", pow(LOOPS,4)*4, pow(LOOPS,4));
 
     return 0;
@@ -213,12 +215,12 @@ int register_pool_1() {
     if (pool1 == NULL) return -1;
 
     // Registering the other indexes for our data structure.
-	if (rdb_register_um_idx(pool1,
+     if (rdb_register_um_idx(pool1,
                             IDX_PSTR, 
                             (void *) &td.string_ptr- (void *) &td.string,
                             RDB_KPSTR | RDB_KASC | RDB_BTREE,
                             NULL) == -1) return -1;
-	
+     
     if (rdb_register_um_idx(pool1,
                             IDX_UI8, 
                             (void *) &td.ui8 - (void *) &td.string,
@@ -267,6 +269,7 @@ int register_pool_1() {
                             RDB_KINT64 | RDB_KASC | RDB_BTREE,
                             NULL) == -1) return -1;
 
+#ifdef USE_128_BIT_TYPES
     if (rdb_register_um_idx(pool1,
                             IDX_UI128, 
                             (void *) &td.ui128 - (void *) &td.string,
@@ -278,7 +281,7 @@ int register_pool_1() {
                             (void *) &td.i128 - (void *) &td.string,
                             RDB_KINT128 | RDB_KASC | RDB_BTREE,
                             NULL) == -1) return -1;
-
+#endif
 /*    if (rdb_register_um_idx(pool1,
                             IDX_UI256, 
                             (void *) &td.ui256 - (void *) &td.string,
@@ -310,12 +313,12 @@ int register_pool_2() {
     if (pool2 == NULL) return -1;
 
     // Registering the other indexes for our data structure.
-	if (rdb_register_um_idx(pool2,
+     if (rdb_register_um_idx(pool2,
                             IDX_PSTR, 
                             (void *) &td.string_ptr- (void *) &td.string,
                             RDB_KPSTR | RDB_KASC | RDB_BTREE,
                             NULL) == -1) return -1;
-	
+     
     if (rdb_register_um_idx(pool2,
                             IDX_UI8, 
                             (void *) &td.ui8 - (void *) &td.string,
@@ -364,6 +367,7 @@ int register_pool_2() {
                             RDB_KINT64 | RDB_KASC | RDB_BTREE,
                             NULL) == -1) return -1;
 
+#ifdef USE_128_BIT_TYPES
     if (rdb_register_um_idx(pool2,
                             IDX_UI128, 
                             (void *) &td.ui128 - (void *) &td.string,
@@ -375,6 +379,7 @@ int register_pool_2() {
                             (void *) &td.i128 - (void *) &td.string,
                             RDB_KINT128 | RDB_KASC | RDB_BTREE,
                             NULL) == -1) return -1;
+#endif
 
 /*    if (rdb_register_um_idx(pool2,
                             IDX_UI256, 
@@ -405,59 +410,64 @@ int register_pools() {
 }
 
 int add_test_data (rdb_pool_t *pool, int loops) {
-	int rc,a,b,c,d;
-	
+     int rc,a,b,c,d;
+     
     for (a=0; a<loops; a++) {
-		for (b=0; b<loops; b++) {
-			for (c=0; c<loops; c++) {
-				for (d=0; d<loops; d++) {
-					ptd=malloc(sizeof(test_data_t));
-					if (ptd==NULL) fatal("Allocation error in %s",__FUNCTION__);
-					ptd->string_ptr = calloc(1,16);
-					if (ptd->string_ptr == NULL) return -1;
-					ptd->string[0]='A' + d;
-					ptd->string[1]='A' + c;
-					ptd->string[2]='A' + b;
-					ptd->string[3]='A' + a;
-					ptd->string[4]=0;
-					*(ptd->string_ptr)='a' + d;
+          for (b=0; b<loops; b++) {
+               for (c=0; c<loops; c++) {
+                    for (d=0; d<loops; d++) {
+                         ptd=malloc(sizeof(test_data_t));
+                         if (ptd==NULL) fatal("Allocation error in %s",__FUNCTION__);
+                         ptd->string_ptr = calloc(1,16);
+                         if (ptd->string_ptr == NULL) return -1;
+                         ptd->string[0]='A' + d;
+                         ptd->string[1]='A' + c;
+                         ptd->string[2]='A' + b;
+                         ptd->string[3]='A' + a;
+                         ptd->string[4]=0;
+                         *(ptd->string_ptr)='a' + d;
                     *(ptd->string_ptr+1)='a' + c;
                     *(ptd->string_ptr+2)='a' + b;
-					*(ptd->string_ptr+3)='a' + a;
+                         *(ptd->string_ptr+3)='a' + a;
                     // We could have pre-calculated the various LOOPS powers out
                     // of this loop, to increase perfoemance, but not an issue
                     // for this test
-					ptd->ui128 = d + (c * loops) + (b * pow(loops, 2)) + 
-                                                        (a * pow(loops, 3)) ;
+#ifdef USE_128_BIT_TYPES
+                    ptd->ui128 = d + (c * loops) + (b * pow(loops, 2)) + 
+                                                    (a * pow(loops, 3)) ;
                     ptd->i128 = ptd->ui128 * -1;
                     
                     ptd->ui64 = ptd->ui128;
                     ptd->i64 = ptd->i128;
+#else
+                    ptd->ui64 = d + (c * loops) + (b * pow(loops, 2)) + 
+                                                    (a * pow(loops, 3)) ;
+                    ptd->i64 = ptd->ui64 * -1;
+#endif                    
+                    ptd->ui32 = ptd->ui64;
+                    ptd->i32 = ptd->i64;
                     
-                    ptd->ui32 = ptd->ui128;
-                    ptd->i32 = ptd->i128;
-                    
-                    ptd->ui16 = ptd->ui128;
-                    ptd->i16 = ptd->i128;
+                    ptd->ui16 = ptd->ui64;
+                    ptd->i16 = ptd->i64;
 
-                    ptd->ui8 = ptd->ui128;
-                    ptd->i8 = ptd->i128;
+                    ptd->ui8 = ptd->ui64;
+                    ptd->i8 = ptd->i64;
                 
                     // those two will make a unique index together...
                     // udq will repeat itself, but combined with ud2 no issue
                     ptd->ud1 = ptd->ui8;
                     memcpy(ptd->ud2, ptd->string,5);
 
-					rc=rdb_insert(pool,ptd);
+                         rc=rdb_insert(pool,ptd);
                     // We check that rDB was able to link all indexes. rDB will
                     // simply skip indexes it can not link-in (due to 
                     // duplicates, for example)
-					if (rc!=TEST_INDEXES) return -1; 
+                         if (rc!=TEST_INDEXES) return -1; 
                         //fatal ("%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
-				}
-			}
-		}
-	}
+                    }
+               }
+          }
+     }
     return 0;
 }
 
@@ -493,10 +503,10 @@ int main(int argc, char *argv[]) {
     
     if (test == 1) {
         
-    	rdb_init();
+     rdb_init();
         rdb_clean();
 
-        // repeat twice to make sure we can re_init after close    	
+        // repeat twice to make sure we can re_init after close       
         rdb_init();
 
         rdb_clean();
@@ -622,21 +632,21 @@ int main(int argc, char *argv[]) {
     // rdb_dump(pool,2);
     // rdb_dump(pool,3);
 
-    // Get and Print some records	
+    // Get and Print some records  
     pdd=rdb_get(pool,0,"AAAA");
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+     if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"AAAB");
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+     if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"BAAA");
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+     if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"BAAB");
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+     if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
-	pdd=rdb_get(pool,1,"dead");
-	if (pdd!=NULL) {
+     pdd=rdb_get(pool,1,"dead");
+     if (pdd!=NULL) {
         info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     }
@@ -650,10 +660,10 @@ int main(int argc, char *argv[]) {
     info ("Now we delete a record, and repeat the get attempt");
     
     pdd=rdb_delete(pool,0,"BAAB");
-	if (pdd!=NULL) info("deleted: %s %s %d %ld",pdd->name, pdd->address_ptr,
+     if (pdd!=NULL) info("deleted: %s %s %d %ld",pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"BAAB");
-	if (pdd!=NULL) {
+     if (pdd!=NULL) {
         info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     } else info ("get BAAB failed");
@@ -662,15 +672,15 @@ int main(int argc, char *argv[]) {
     // This shows the common way to search for data ... 
     // one use rdb_get with a pointer to a variable containing what is 
     // search for.
-    int find_me = 500;	
-	pdd=rdb_get(pool,3,&find_me);
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+    int find_me = 500;   
+     pdd=rdb_get(pool,3,&find_me);
+     if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
-	
+     
     // But, at times we need a constant value. This call will allow that.
     // (But for real numbers only, obviously).
     pdd=rdb_get_const(pool,3,501);
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+     if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
    
     // Below is a violation (string is refferance by ponter), compiler will
@@ -678,11 +688,11 @@ int main(int argc, char *argv[]) {
     // for strings, as done above 
     //
     // pdd=rdb_get_const(pool,1,"abcd");
-	// if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,pdd->age,pdd->long_value);
+     // if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,pdd->age,pdd->long_value);
     
     // This will iterate the entire data pool, calling myDump on each record
     // BUT, return code from the call can intervene. in this case, it will
-    // abort the cycle after printing the record where at age == 3	
+    // abort the cycle after printing the record where at age == 3    
     // Try changing the index we use to iterate on . what happened?
     rdb_iterate(pool,2,(void *) &myDump, NULL, NULL, NULL);
     

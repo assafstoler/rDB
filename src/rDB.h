@@ -53,20 +53,15 @@
 
 #define RDB_POOL_MAX_IDX 16      		// how many indexes we allow on each pool (tree)
 
-//TODO kill thouse special types
-/*typedef struct _U32A {
-    uint32_t	l1,
-                l2,
-                l3,
-                acc;
-} U32a;
+#ifdef USE_128_BIT_TYPES
+#define __intmax_t __int128_t
+#define __uintmax_t __uint128_t
+#else 
+#define __intmax_t __int64_t
+#define __uintmax_t __uint64_t
+#endif
 
-typedef struct timeval_accomulator {
-    struct timeval tv;
-    uint32_t acc;
-} TVA;
-*/
-
+#ifdef USE_128_BIT_TYPES
 typedef struct _type_u256 {
     __uint128_t lsb,
                 msb;
@@ -74,8 +69,20 @@ typedef struct _type_u256 {
 
 typedef struct _type_i256 {
     __uint128_t lsb;
-    __int128_t 	msb;
+    __int128_t  msb;
 } type_256;
+#else
+typedef struct _type_u128 {
+    uint64_t    lsb,
+                msb;
+} type_u128;
+
+typedef struct _type_i128 {
+    uint64_t    lsb;
+    int64_t     msb;
+} type_128;
+
+#endif
 
 typedef union {
     char      		*pStr;
@@ -88,10 +95,12 @@ typedef union {
     uint16_t   		u16;
     uint32_t   		u32;
     uint64_t   		u64;
+#ifdef USE_128_BIT_TYPES
     __int128_t  	i128;
     __uint128_t 	u128;
     type_256		i256;
     type_u256 		u256;
+#endif
     struct    		timeval tv;
  //   TVA	   tva;
  //   U32a	   u32a;
@@ -159,15 +168,15 @@ int         rdb_unlock(rdb_pool_t *pool) ;
 int         rdb_insert (rdb_pool_t *pool, void *data);
 int         rdb_insert_one (rdb_pool_t *pool, int index, void *data);
 void       *rdb_get (rdb_pool_t *pool, int idx, void *data);
-void       *rdb_get_const (rdb_pool_t *pool, int idx, __int128_t value);
+void       *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value);
 void       *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after);
 void        rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
                 void *fn_data, void del_fn(void *, void *), void *del_data);
 void        rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data);
 void       *rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data);
 int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
-void       *rdb_delete_const (rdb_pool_t *pool, int idx, __int128_t value);
-void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __int128_t value);
+void       *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value);
+void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value);
 void       *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data);
 
 //void        _rdb_dump (rdb_pool_t *, int index, void *start);
@@ -183,23 +192,26 @@ int         key_cmp_int32 (int32_t *old, int32_t *);
 int         key_cmp_uint32 (uint32_t *old, uint32_t *);
 int         key_cmp_int64 (int64_t *old, int64_t *);
 int         key_cmp_uint64 (uint64_t *old, uint64_t *);
+#ifdef USE_128_BIT_TYPES
 int         key_cmp_int128 (__int128_t *old, __int128_t *);
 int         key_cmp_uint128 (__uint128_t *old, __uint128_t *);
+#endif
 
 //This is the only one where get = insert...
 //int         key_cmp_str (char *old, char *);
 int         key_cmp_const_str_p (char **old, char *);
-int         key_cmp_const_int8 (int8_t *old, __int128_t);
-int         key_cmp_const_uint8 (uint8_t *old, __uint128_t);
-int         key_cmp_const_int16 (int16_t *old, __int128_t);
-int         key_cmp_const_uint16 (uint16_t *old, __uint128_t);
-int         key_cmp_const_int32 (int32_t *old, __int128_t);
-int         key_cmp_const_uint32 (uint32_t *old, __uint128_t);
-int         key_cmp_const_int64 (int64_t *old, __int128_t);
-int         key_cmp_const_uint64 (uint64_t *old, __uint128_t);
-int         key_cmp_const_int128 (__int128_t *old, __int128_t);
-int         key_cmp_const_uint128 (__uint128_t *old, __uint128_t);
-
+int         key_cmp_const_int8 (int8_t *old, __intmax_t);
+int         key_cmp_const_uint8 (uint8_t *old, __uintmax_t);
+int         key_cmp_const_int16 (int16_t *old, __intmax_t);
+int         key_cmp_const_uint16 (uint16_t *old, __uintmax_t);
+int         key_cmp_const_int32 (int32_t *old, __intmax_t);
+int         key_cmp_const_uint32 (uint32_t *old, __uintmax_t);
+int         key_cmp_const_int64 (int64_t *old, __intmax_t);
+int         key_cmp_const_uint64 (uint64_t *old, __uintmax_t);
+#ifdef USE_128_BIT_TYPES
+int         key_cmp_const_int128 (__int128_t *old, __intmax_t);
+int         key_cmp_const_uint128 (__uint128_t *old, __uintmax_t);
+#endif
 //int keyCompareTME (struct timeval *old, struct timeval *);
 //int keyCompareTMA (TVA *old, TVA *);
 //int keyCompare4U32A (U32a *old, U32a *);

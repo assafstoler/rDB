@@ -56,6 +56,13 @@
 
 #define PP_T  rdb_bpp_t
 
+#ifdef USE_128_BIT_TYPES
+#define __intmax_t __int128_t
+#define __uintmax_t __uint128_t
+#else 
+#define __intmax_t __int64_t
+#define __uintmax_t __uint64_t
+#endif
 
 /*typedef struct RDB_INDEX_DATA {
     int     segments;
@@ -71,10 +78,10 @@ rdb_pool_t  *pool_root;
 //struct  RDB_POOLS **poolIds;
 
 #ifdef KM
-//struct 	RDB_POOLS **poolIdsTmp;
+//struct  RDB_POOLS **poolIdsTmp;
 #endif
 
-char   	*rdb_error_string = NULL;
+char      *rdb_error_string = NULL;
 
 // used to calculate tree depth by dump Fn()
 int     levels,
@@ -215,7 +222,9 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
         pool->fn[i] = key_cmp_uint8;
         pool->get_fn[i] = key_cmp_uint8;
         pool->get_const_fn[i] = key_cmp_const_uint8;
-    } else if (flags & RDB_KINT128) {
+    } 
+#ifdef USE_128_BIT_TYPES
+      else if (flags & RDB_KINT128) {
         pool->fn[i] = key_cmp_int128;
         pool->get_fn[i] = key_cmp_int128;
         pool->get_const_fn[i] = key_cmp_const_int128;
@@ -223,7 +232,9 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
         pool->fn[i] = key_cmp_uint128;
         pool->get_fn[i] = key_cmp_uint128;
         pool->get_const_fn[i] = key_cmp_const_uint128;
-    } else if (flags & RDB_KSTR) {
+    } 
+#endif
+      else if (flags & RDB_KSTR) {
         pool->fn[i] = key_cmp_str;
         pool->get_fn[i] = key_cmp_str; 
         pool->get_const_fn[i] = key_cmp_str; 
@@ -315,7 +326,7 @@ rdb_pool_t *rdb_add_pool (
 
 rdb_pool_t *rdb_register_um_pool (
         char *poolName, 
-	    int idxCount, 
+        int idxCount, 
         int key_offset, 
         int FLAGS, 
         void *fn) {
@@ -389,7 +400,7 @@ int key_cmp_int32 (int32_t *old, int32_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_int32 (int32_t *old, __int128_t new)
+int key_cmp_const_int32 (int32_t *old, __intmax_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -398,7 +409,7 @@ int key_cmp_uint32 (uint32_t *old, uint32_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_uint32 (uint32_t *old, __uint128_t new)
+int key_cmp_const_uint32 (uint32_t *old, __uintmax_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -407,7 +418,7 @@ int key_cmp_int16 (int16_t *old, int16_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_int16 (int16_t *old, __int128_t new)
+int key_cmp_const_int16 (int16_t *old, __intmax_t new)
 {   
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -416,7 +427,7 @@ int key_cmp_uint16 (uint16_t *old, uint16_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_uint16 (uint16_t *old, __uint128_t new)
+int key_cmp_const_uint16 (uint16_t *old, __uintmax_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -425,7 +436,7 @@ int key_cmp_int8 (int8_t *old, int8_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_int8 (int8_t *old, __int128_t new)
+int key_cmp_const_int8 (int8_t *old, __intmax_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -434,7 +445,7 @@ int key_cmp_uint8 (uint8_t *old, uint8_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_uint8 (uint8_t *old, __uint128_t new)
+int key_cmp_const_uint8 (uint8_t *old, __uintmax_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -443,7 +454,7 @@ int key_cmp_int64 (int64_t *old, int64_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_int64 (int64_t *old, __int128_t new)
+int key_cmp_const_int64 (int64_t *old, __intmax_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
@@ -452,11 +463,19 @@ int key_cmp_uint64 (uint64_t *old, uint64_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
 }
-int key_cmp_const_uint64 (uint64_t *old, __uint128_t new)
+int key_cmp_const_uint64 (uint64_t *old, __uintmax_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
 
+/* 128 bit fn's are tricky when we don't have 128 native type to supply a 
+ * comperator.
+ * 256 bit's are alwways that way .... 
+ * as such, 'const' fn's will take biggest native size as comperator while
+ * non-const will use full size of type
+ * */
+
+#ifdef USE_128_BIT_TYPES
 int key_cmp_int128 (__int128_t *old, __int128_t *new)
 {
     return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
@@ -474,7 +493,38 @@ int key_cmp_const_uint128 (__uint128_t *old, __uint128_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
-//TODO add 256 bit types
+#else
+//TODO: use GMP if found, to support big numbers safely.
+/* - this junk is here until i decide which way to go - GMP, native, or NONE, when we have no native 128 bit support
+ * currently it's out - no 128 bit without 128 bit native support.
+ *
+int key_cmp_int128 (type_128 *old, type_128 *new)
+{
+    return (*new->msb <  *old->msb) ? -1 : (( *new->msb > *old->msb) ? 1 : ((*new->lsb < *old->lsb) ? -1 : ((*new->lsb > *old->lsb) ? 1 : 0 ))); 
+}
+int key_cmp_const_int128 (type_128 *old, __intmax_t new)
+{
+    //type_128 new_new;
+    //new_new.lsb=new;
+    //if (new < 0) new_new.msb=0xffffffffffffffff; // extending the sign
+    if (0 < *old->msb ) return -1;    // must be bigger then what we can spcify with 64 bits 'new'
+    if (0 > *old->msb && *old->msb != -1) return 1;
+    return (new <  (int64_t) *old->lsb) ? -1 : (( new > (int64_t) *old->lsb) ? 1 : 0); 
+    //return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+    //return (new <  *old->msb) ? -1 : (( new > *old->msb) ? 1 : ((new < *old->lsb) ? -1 : ((new > *old->lsb) ? 1 : 0 ))); 
+}
+
+int key_cmp_uint128 (__uint128_t *old, type_128 *new)
+{
+    return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
+    return (*new->msb <  *old->msb) ? -1 : (( *new->msb > *old->msb) ? 1 : ((*new->lsb < *old->lsb) ? -1 : ((*new->lsb > *old->lsb) ? 1 : 0 ))); 
+}
+int key_cmp_const_uint128 (__uint128_t *old, __uint128_t new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}*/
+#endif
+//TODO add 256 bit types, and fix rDB.h line 38 to reflect
 
 int key_cmp_str (char *old, char *new)
 {
@@ -606,6 +656,7 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
             //TODO: this is a bug, data below may be truncated.
             //need to craft 128bit decimal print functions.
             //
+#ifdef USE_128_BIT_TYPES
             case RDB_KUINT128:
                 info ("%llu%s", (unsigned long long) key->u128, separator);
                 break;
@@ -613,6 +664,7 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
             case RDB_KINT128:
                 info ("%lld%s", (long long) key->u128, separator);
                 break;
+#endif
             // we can't print custom functions data so we print the address
             // TODO: Consider adding a print-to-str fn() hook to pool, so we can dump custom-index data
             case RDB_KCF:
@@ -1117,7 +1169,7 @@ void   *rdb_get (rdb_pool_t *pool, int idx, void *data)
     return _rdb_get (pool, idx, data, NULL, 0);
 }
 
-void   *rdb_get_const (rdb_pool_t *pool, int idx, __int128_t value)
+void   *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value)
 {
     debug("Get:pool=%s,idx=%d", pool->name, idx);
     return _rdb_get/*_const*/ (pool, idx, &value, NULL, 0);
@@ -1682,7 +1734,7 @@ int _rdb_delete (
 
     if (pool->FLAGS[lookupIndex] & (RDB_NOKEYS)) {
         void   *ptr = NULL;         // NULL to sashhh the compiler
-        int		indexCount;
+        int         indexCount;
         PP_T   *ppk,
                *ppkRight,
                *ppkLeft;
@@ -2020,7 +2072,7 @@ retest_delete_cond:
     return 0;                                // Should never get here
 }   
 
-void   *rdb_delete_const (rdb_pool_t *pool, int idx, __int128_t value)
+void   *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value)
 {
     debug("Get:pool=%s,idx=%d", pool->name, idx);
     return rdb_delete (pool, idx, &value); //, NULL, 0);
@@ -2098,7 +2150,7 @@ int rdb_delete_one (rdb_pool_t *pool, int index, void *data)
 // move data (identified by value const, from source tree to destination tree.
 // data is not copied or reallocated, only trees pointers are updated.
 //
-void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __int128_t value) {
+void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value) {
         rdb_insert (dst_pool, rdb_delete (src_pool, idx, &value));
 }
 
