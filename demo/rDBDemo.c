@@ -2,6 +2,7 @@
 #include <stdlib.h> //exit,
 #include <string.h>
 #include <math.h>   // pow
+#include <inttypes.h>
 #include "rDB.h"
 
 #define fatal(b,arg...) do {     \
@@ -54,7 +55,7 @@ rdb_pool_t *pool;
 // ... and abord after a few records ... 
 static int myDump(void *ptr){
 	pdd=ptr;
-	printf("MyDump: %s %s %d %ld\n",
+	printf("MyDump: %s %s %d %" PRId64 "\n",
         pdd->name,
         pdd->address_ptr,
         pdd->age,
@@ -199,20 +200,20 @@ int main(int argc, char *argv[]) {
 
     // Get and Print some records	
     pdd=rdb_get(pool,0,"AAAA");
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) info("get: %s %s %d %" PRId64 ,pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"AAAB");
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) info("get: %s %s %d %" PRId64, pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"BAAA");
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) info("get: %s %s %d %" PRId64, pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"BAAB");
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) info("get: %s %s %d %" PRId64, pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
 	pdd=rdb_get(pool,1,"dead");
 	if (pdd!=NULL) {
-        info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+        info("get: %s %s %d %" PRId64, pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     }
      else info ("filed to find record with value 'dead' in index 1");
@@ -225,11 +226,11 @@ int main(int argc, char *argv[]) {
     info ("Now we delete a record, and repeat the get attempt");
     
     pdd=rdb_delete(pool,0,"BAAB");
-	if (pdd!=NULL) info("deleted: %s %s %d %ld",pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) info("deleted: %s %s %d %" PRId64, pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"BAAB");
 	if (pdd!=NULL) {
-        info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+        info("get: %s %s %d %" PRId64, pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     } else info ("get BAAB failed");
     
@@ -239,13 +240,13 @@ int main(int argc, char *argv[]) {
     // search for.
     int find_me = 500;	
 	pdd=rdb_get(pool,3,&find_me);
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) info("get: %s %s %d %" PRId64, pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
 	
     // But, at times we need a constant value. This call will allow that.
     // (But for real numbers only, obviously).
     pdd=rdb_get_const(pool,3,501);
-	if (pdd!=NULL) info("get: %s %s %d %ld",pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) info("get: %s %s %d %" PRId64, pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
    
     // Below is a violation (string is refferance by ponter), compiler will

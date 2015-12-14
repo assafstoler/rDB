@@ -2150,12 +2150,18 @@ int rdb_delete_one (rdb_pool_t *pool, int index, void *data)
 // move data (identified by value const, from source tree to destination tree.
 // data is not copied or reallocated, only trees pointers are updated.
 //
-void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value) {
-        rdb_insert (dst_pool, rdb_delete (src_pool, idx, &value));
+void *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value) {
+    void *ptr;
+    ptr = rdb_delete (src_pool, idx, &value);
+    if (ptr && rdb_insert (dst_pool, ptr)) return ptr;
+    return NULL;
 }
 
-void       *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data) {
-        rdb_insert (dst_pool, rdb_delete (src_pool, idx, data));
+void *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data) {
+    void *ptr;
+    ptr = rdb_delete (src_pool, idx, data);
+    if (ptr && rdb_insert (dst_pool, ptr)) return ptr;
+    return 0;
 }
 
 #ifdef KM
