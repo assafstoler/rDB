@@ -390,7 +390,7 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
     pool->root[idx] = NULL;
     pool->key_offset[idx] = sizeof (PP_T) * pool->indexCount + key_offset;
     pool->FLAGS[idx] = FLAGS;
-    debug ("registered index %d for pool %d, Keyoffset is %d\n", idx, hdl, key_offset);
+    debug ("registered index %d for pool %s, Keyoffset is %d\n", idx, pool->name, key_offset);
     pthread_mutex_unlock(&reg_mutex);
     return (idx);
 }
@@ -595,7 +595,13 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
     if (levels > maxLevels)
         maxLevels = levels;
 
-    if (pool->FLAGS[index] & RDB_BTREE) {
+    if (pool->FLAGS[index] & (RDB_BTREE | RDB_NOKEYS))  {
+        pp = pool->root[0] ;//+ sizeof (PP_T) ;    // print data-head
+        while (pp) {
+            info ("%p%s", pp, separator);
+            pp = pp->right;
+        }
+    } else if (pool->FLAGS[index] & RDB_BTREE & RDB_KEYS) {
         if (start == NULL) {
             pp = (void *) pool->root[index] + (sizeof (PP_T) * index);
             searchNext = (void **) pool->root[index];
@@ -612,7 +618,7 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
             levels--;
         }
 
-        switch (pool->FLAGS[index] & (RDB_KEYS)) {
+        switch (pool->FLAGS[index] & RDB_KEYS) {
             case RDB_KPSTR:
                 info ("%s%s", key->pStr, separator);
                 break;
@@ -717,7 +723,7 @@ void rdb_dump (rdb_pool_t *pool, int index, char *separator) {
 
     if (pool->root[index] == NULL) return;
 
-    if ((pool->FLAGS[index] & (RDB_KEYS)) != 0)
+    if ((pool->FLAGS[index] & (RDB_KEYS | RDB_NOKEYS)) != 0)
         _rdb_dump (pool, index, separator, NULL);
 }
 
