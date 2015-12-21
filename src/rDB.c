@@ -595,13 +595,13 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
     if (levels > maxLevels)
         maxLevels = levels;
 
-    if (pool->FLAGS[index] & (RDB_BTREE | RDB_NOKEYS))  {
+    if (pool->FLAGS[index] & RDB_BTREE && (pool->FLAGS[index] & RDB_NOKEYS))  {
         pp = pool->root[0] ;//+ sizeof (PP_T) ;    // print data-head
         while (pp) {
             info ("%p%s", pp, separator);
             pp = pp->right;
         }
-    } else if (pool->FLAGS[index] & RDB_BTREE & RDB_KEYS) {
+    } else if (pool->FLAGS[index] & RDB_BTREE && (pool->FLAGS[index] & RDB_KEYS)) {
         if (start == NULL) {
             pp = (void *) pool->root[index] + (sizeof (PP_T) * index);
             searchNext = (void **) pool->root[index];
