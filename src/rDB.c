@@ -27,13 +27,14 @@
 #include <linux/kernel.h>
 #include <linux/version.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/types.h>
 #include <net/sock.h>
 #include <linux/skbuff.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <net/genetlink.h>
-
+#include <linux/semaphore.h>
 #include <linux/vmalloc.h>
 #include "rDB.h"
 
@@ -107,12 +108,22 @@ int     levels,
 
 
 
+#ifdef KM
+struct semaphore reg_mutex;
+#define rdb_sem_lock(A) down_interruptible(A)
+#define rdb_sem_unlock(A) up(A)
+#else
 pthread_mutex_t reg_mutex = PTHREAD_MUTEX_INITIALIZER;
-
+#define rdb_sem_lock(A) pthread_mutex_lock(A)
+#define rdb_sem_unlock(A) pthread_mutex_unlock(A)
+#endif
 // Initilize the rDB subsystem, must be called once before any other rDB 
 // function
 void rdb_init (void)
 {
+#ifdef KM
+    sema_init(&reg_mutex, 1);
+#endif
     pool_root = NULL;
 }
 
@@ -310,8 +321,10 @@ rdb_pool_t *rdb_add_pool (
     pool->FLAGS[0] = FLAGS;
 
     debug ("pool %s, FLAGS=%xn", pool->name, pool->FLAGS[0]);
-
-#ifndef KM
+#ifdef KM
+    sema_init(&pool->read_mutex, 1);
+    sema_init(&pool->write_mutex, 1);
+#else
     pthread_mutex_init(&pool->read_mutex, NULL); 
     pthread_mutex_init(&pool->write_mutex, NULL); 
 #endif
@@ -334,7 +347,7 @@ rdb_pool_t *rdb_register_um_pool (
     rdb_pool_t *pool;
 
     //TODO:kernel frindly locks
-    pthread_mutex_lock(&reg_mutex);
+    rdb_sem_lock(&reg_mutex);
 
     if (rdb_find_pool_by_name (poolName) != NULL) {
         rdb_error ("rDB: FATAL: Duplicte pool name in rdb_register_pool");
@@ -342,7 +355,7 @@ rdb_pool_t *rdb_register_um_pool (
     } else {
         pool = rdb_add_pool (poolName, idxCount, key_offset, FLAGS, fn);
     }
-    pthread_mutex_unlock(&reg_mutex);
+    rdb_sem_unlock(&reg_mutex);
 
     return pool;
 }
@@ -371,7 +384,7 @@ void rdb_clean(void) {
 // Register additional Indexes to an existing data pool
 int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
         int FLAGS, void *compare_fn) {
-    pthread_mutex_lock(&reg_mutex);
+    rdb_sem_lock(&reg_mutex);
     if (idx == 0)
         return (rdb_error_value (-1, 
             "Index 0 (zero) can only be set via rdb_register_pool"));
@@ -384,14 +397,14 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
 
     if (-1 == set_pool_fn_pointers(pool, idx, FLAGS, compare_fn)){
         return (rdb_error_value (-4,
-            "Index Registration without valid type or compatr fn. Ignored"));
+            "Index Registration without valid type or compare fn. Ignored"));
     }
 
     pool->root[idx] = NULL;
     pool->key_offset[idx] = sizeof (PP_T) * pool->indexCount + key_offset;
     pool->FLAGS[idx] = FLAGS;
     debug ("registered index %d for pool %s, Keyoffset is %d\n", idx, pool->name, key_offset);
-    pthread_mutex_unlock(&reg_mutex);
+    rdb_sem_unlock(&reg_mutex);
     return (idx);
 }
 
@@ -557,7 +570,8 @@ int key_cmp_const_str_p (char **old, char *new)
     return 0;
 }*/
 
-inline void set_pointers (
+//TODO: some compilers dont like this inlining. need more research
+/*inline*/ void set_pointers (
         rdb_pool_t *pool, 
         int index, 
         void *start, 
@@ -709,12 +723,13 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
 
 int rdb_lock(rdb_pool_t *pool) 
 {
-    return pthread_mutex_lock(&pool->write_mutex);
+    return rdb_sem_lock(&pool->write_mutex);
 }
 
-int rdb_unlock(rdb_pool_t *pool) 
+void rdb_unlock(rdb_pool_t *pool) 
 {
-    return pthread_mutex_unlock(&pool->write_mutex);
+    rdb_sem_unlock(&pool->write_mutex);
+    return ;
 }
 
 // Dump an entire pool to stdout. only the selected index field will be
@@ -1033,7 +1048,7 @@ int _rdb_insert (
     return -1;                          // we found no mechanizm to add node
 }
 
-// Return shoud be the # of updated indexes, which must maych the number of 
+// Return shoud be the # of updated indexes, which must match the number of 
 // defined indexes, anything less shows an error and should be treated as 
 // such by user.
 // TODO? Should we make this atomic - meaning if one index failes fo insert, 
@@ -2173,7 +2188,7 @@ void *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data)
 #ifdef KM
 static int __init init (void)
 {
-    rdbInit ();
+    rdb_init ();
     return 0;
 }
 
@@ -2182,8 +2197,8 @@ static void __exit fini (void)
     return;
 }
 
-EXPORT_SYMBOL (rdb_register_pool);
-EXPORT_SYMBOL (rdb_register_idx);
+EXPORT_SYMBOL (rdb_register_um_pool);
+EXPORT_SYMBOL (rdb_register_um_idx);
 EXPORT_SYMBOL (rdb_dump);
 EXPORT_SYMBOL (rdb_insert);
 EXPORT_SYMBOL (rdb_get);

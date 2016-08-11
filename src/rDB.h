@@ -1,8 +1,16 @@
 #ifndef __rDB_h_
 #define __rDB_h_
 
+#ifndef KM
 #include <sys/time.h>
 #include <stdint.h>
+#else
+#include <linux/types.h>
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define RDB_KFIFO   (1 << 0 )   // No key - make a FIFO in essence. uses one BPP_t 
 #define RDB_KLIFO   (1 << 1 )   // No key - make a LIFO / stack in essence. uses one BPP_t 
@@ -57,8 +65,13 @@
 #define __intmax_t __int128_t
 #define __uintmax_t __uint128_t
 #else 
+#ifdef KM
+#define __intmax_t int64_t
+#define __uintmax_t uint64_t
+#else
 #define __intmax_t __int64_t
 #define __uintmax_t __uint64_t
+#endif
 #endif
 
 #ifdef USE_128_BIT_TYPES
@@ -144,9 +157,13 @@ typedef struct RDB_POOLS {
     int32_t 	 	(*get_fn[RDB_POOL_MAX_IDX])();
     int32_t 	 	(*get_const_fn[RDB_POOL_MAX_IDX])();
 
+#ifdef KM
+    struct semaphore write_mutex;
+    struct semaphore read_mutex;
+#else
     pthread_mutex_t write_mutex;
     pthread_mutex_t read_mutex;
-
+#endif
     //   rdb_index_data_t**  index_data;             ///< index data master containder - dynamic
 }  rdb_pool_t;
 
@@ -164,7 +181,7 @@ void        rdb_clean(void);
 int         rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
                 int FLAGS, void *compare_fn);
 int         rdb_lock(rdb_pool_t *pool); 
-int         rdb_unlock(rdb_pool_t *pool) ;
+void         rdb_unlock(rdb_pool_t *pool) ;
 int         rdb_insert (rdb_pool_t *pool, void *data);
 int         rdb_insert_one (rdb_pool_t *pool, int index, void *data);
 void       *rdb_get (rdb_pool_t *pool, int idx, void *data);
@@ -217,4 +234,7 @@ int         key_cmp_const_uint128 (__uint128_t *old, __uintmax_t);
 //int keyCompare4U32A (U32a *old, U32a *);
 
 
+#ifdef __cplusplus
+}
+#endif
 #endif

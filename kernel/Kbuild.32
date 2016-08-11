@@ -1,0 +1,15 @@
+obj-m = rDB.o
+
+
+ccflags-y := -Wno-strict-prototypes -DKM
+
+
+TARGET  := rDB
+WARN    := -W -Wall -Wno-strict-prototypes
+	
+${TARGET}.o: ../src/${TARGET}.c
+
+.PHONY: clean
+
+clean:
+	rm -rf ${TARGET}.o
