@@ -38,3 +38,6 @@ target_link_libraries (skeleton pthread dl rdb_beta)
 ADD_LIBRARY(timers SHARED timers.c)
 target_link_libraries (timers pthread dl rdb_beta)
 
+ADD_LIBRARY(hw_timers SHARED hw_timers.c)
+target_link_libraries (hw_timers pthread dl rdb_beta rt)
+

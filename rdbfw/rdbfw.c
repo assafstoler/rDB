@@ -264,7 +264,7 @@ int main( int argc, char *argv[] )
     rdbmsg_init(plugin_pool);
     
     // Register plugins
-    register_plugin("timers", plugin_pool, plugin_node);
+    register_plugin("hw_timers", plugin_pool, plugin_node);
     register_plugin("event_skeleton", plugin_pool, plugin_node);
     //register_plugin("skeleton", plugin_pool, plugin_node);
 
@@ -275,10 +275,10 @@ int main( int argc, char *argv[] )
 
     //Hz (delay) for periodic message delivery - or how long may a message be 
     // queued for before wakeing up the client
-    rdbmsg_delay_HZ(1000);
+    rdbmsg_delay_HZ(10000000);
     // this is the maximum pending messages that may be queued before a module
     // is woken up to process them
-    wake_count_limit = 10000;
+    wake_count_limit = 1;
 
     //dump req tree - need to reqrite for complex dispatch tree
     //rdb_iterate(plugin_pool,  0, dump_msg_req_cb, NULL, NULL, NULL); 

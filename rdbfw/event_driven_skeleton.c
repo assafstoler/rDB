@@ -8,7 +8,7 @@
 #include "rDB.h"
 #include "messaging.h"
 #include "rdbfw.h"
-
+#include "utils.h"
     
 static int rc;
 
@@ -17,6 +17,10 @@ static pthread_attr_t attr;
     
 static plugins_t *ctx;
 static int break_requested = 0;
+
+struct timespec ts[3];
+static int pingpong=0;
+
 
 
 void *skel_event(void *p) {
@@ -31,13 +35,18 @@ void *skel_event(void *p) {
 #ifdef WAKEUP_ACCOUNTING
         ctx->wakeup_count++;
 #endif
-        printf("skel_event_woken_up (%d)\n",ctx->msg_pending_count);                  // do some work...
+        if (ctx->msg_pending_count > 1) printf("skel_event_woken_up (%d)\n",ctx->msg_pending_count);                  // do some work...
         do {
             rdb_lock(ctx->msg_q_pool);
             q = rdb_delete(ctx->msg_q_pool, 0, NULL);
             if (q) {
-		msg=&(q->msg);
-		printf("from %d to %d grp %d ID %d val %d\n",msg->from, msg->to, msg->group, msg->id, msg->len);
+                clock_gettime(CLOCK_REALTIME, &ts[pingpong]);
+                pingpong = 1 - pingpong;
+                diff_time_ns(&ts[pingpong], &ts[1-pingpong ], &ts[2]);
+                print_time(&ts[2]);
+
+                msg=&(q->msg);
+                //printf("from %d to %d grp %d ID %d val %d\n",msg->from, msg->to, msg->group, msg->id, msg->len);
                 if (msg->id ==  RDBMSG_ID_TIMER_ACK) {
                     // now ask to receive (in addition) messages for assigned timer    
                     rdbmsg_request(ctx, RDBMSG_ROUTE_NA, RDBMSG_ROUTE_NA, RDBMSG_GROUP_TIMERS, RDBMSG_ID_TIMER_TICK_0 + msg->len);
@@ -90,12 +99,12 @@ void skel_event_start(void *p) {
                 RDBMSG_ROUTE_MDL_TIMERS,
                 RDBMSG_GROUP_TIMERS,
                 RDBMSG_ID_TIMER_START,
-                2 /*Hz*/);
-    rdbmsg_emit_simple(RDBMSG_ROUTE_MDL_EVENT_SKEL,
+                1000 /*Hz*/);
+    /*rdbmsg_emit_simple(RDBMSG_ROUTE_MDL_EVENT_SKEL,
                 RDBMSG_ROUTE_MDL_TIMERS,
                 RDBMSG_GROUP_TIMERS,
                 RDBMSG_ID_TIMER_START,
-                10 );
+                10 ); */
 }
 
 void skel_event_stop(void *p) {
