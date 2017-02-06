@@ -278,7 +278,7 @@ rdb_pool_t *rdb_add_pool (
     pool = rdb_alloc(sizeof (rdb_pool_t));
 
     if (pool == NULL) {
-        rdb_error ("FATAL: Pool allocation error, out of memory");
+        rdb_error ("Fatal: Pool allocation error, out of memory");
         return NULL;
     }
 
@@ -350,7 +350,7 @@ rdb_pool_t *rdb_register_um_pool (
     rdb_sem_lock(&reg_mutex);
 
     if (rdb_find_pool_by_name (poolName) != NULL) {
-        rdb_error ("rDB: FATAL: Duplicte pool name in rdb_register_pool");
+        rdb_error ("rDB: Fatal: Duplicte pool name in rdb_register_pool");
         pool = NULL;
     } else {
         pool = rdb_add_pool (poolName, idxCount, key_offset, FLAGS, fn);
@@ -390,7 +390,7 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
             "Index 0 (zero) can only be set via rdb_register_pool"));
 
     if (idx >= RDB_POOL_MAX_IDX)
-        return (rdb_error_value (-2, "Index >= RDB_INDEX_MAX_IDX"));
+        return (rdb_error_value (-2, "Index >= RDB_POOL_MAX_IDX"));
 
     if (pool->FLAGS[idx] != 0)
         return (rdb_error_value (-3, "Redefinition of used index not allowed"));
@@ -610,8 +610,11 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
         maxLevels = levels;
 
     if (pool->FLAGS[index] & RDB_BTREE && (pool->FLAGS[index] & RDB_NOKEYS))  {
-        pp = pool->root[0] ;//+ sizeof (PP_T) ;    // print data-head
+        pp = ((void *) (pool->root[index])) + (sizeof (PP_T) * index) ;    // print data-head
         while (pp) {
+            //searchNext = (void **) pp;
+            //key = (void *) searchNext + pool->key_offset[0];
+            //info ("%s%s", &key->str, separator);
             info ("%p%s", pp, separator);
             pp = pp->right;
         }
@@ -771,32 +774,37 @@ int _rdb_insert (
         if (pool->FLAGS[index] & (RDB_NOKEYS)) {
             if (pool->root[index] == NULL) {
                 pool->root[index] = pool->tail[index] = data;
-                ppkNew = data + (sizeof (PP_T) * index);
+                ppkNew = (void *) data + (sizeof (PP_T) * index);
                 ppkNew->left = ppkNew->right = NULL;
                 ppkNew->balance = 0;
+	//		printf("%d)added pp=%p, data=%p\n",index ,ppkNew,data);
             }
             else {   // Added elemant
                 if (pool->FLAGS[index] & RDB_KFIFO) { 
                     // FIFO, add to tail, as we always read/remove from head 
                     // forward
-                    ppkParent = pool->tail[index] + (sizeof (PP_T) * index);
+                    ppkParent = (void *) pool->tail[index] + (sizeof (PP_T) * index);
+			//printf("tail=%p-%p %d\n", pool->tail[index], (void *) pool->tail[index] + (sizeof (PP_T) * index), index);
                     ppkNew = data + (sizeof (PP_T) * index);
-                    ppkNew->left = ppkParent - index;
+                    ppkNew->left = ppkParent;// - index;
+	//printf("prev = %p\n", ppkNew->left);
                     ppkNew->right = NULL;
-                    ppkParent->right = ppkNew - index;
+                    ppkParent->right = ppkNew;// - index;
                     ppkNew->balance = 0;
                     pool->tail[index] = data;
+	//		printf("%d)added pp=%p, parent=%p-%p\n",index ,ppkNew,ppkParent, ppkParent->right);
                 }
                 else if (pool->FLAGS[index] & RDB_KLIFO) {   
                     // LIFO, add to head, as we always read/remove from head 
                     // forward
-                    ppkParent = pool->root[index] + (sizeof (PP_T) * index);
+                    ppkParent = (void *) pool->root[index] + (sizeof (PP_T) * index);
                     ppkNew = data + (sizeof (PP_T) * index);
-                    ppkNew->right = ppkParent - index;
+                    ppkNew->right = ppkParent;// - index;
                     ppkNew->left = NULL;
-                    ppkParent->left = ppkNew - index;
+                    ppkParent->left = ppkNew;// - index;
                     ppkNew->balance = 0;
                     pool->root[index] = data;
+			//printf("%d)added pp=%p, parent=%p-%p\n",index ,ppkNew,ppkParent, ppkParent->left);
                 }
             }
         }
@@ -1312,7 +1320,9 @@ int _rdb_iterate (
     char   **dataField;
     PP_T   *pp, *pr;
     int     rc, rc2 = 0;
+    int     rc3 = 0;
     int     indexCount;
+                            rc = RDBFE_NODE_FIND_NEXT | (rc & RDBFE_ABORT);
 
 rfeStart:
 
@@ -1330,9 +1340,9 @@ rfeStart:
         }
         else {
             if (*resumePtr != NULL) {
-                if ((pool->fn[index] (dataHead + pool->key_offset[index],
+                if ((rc3 = pool->fn[index] (dataHead + pool->key_offset[index],
                         (void *) resumePtr + pool->key_offset[index])) < 0) {
-                    //debug("->left\n");
+                    debug("1->left(i=%d)\n",index);
                     if ( 1 == ( 1 & (rc =  _rdb_iterate (pool, index, fn, data,
                              del_fn, delfn_data, pp->left, start, RDB_TREE_LEFT,
                                                                 resumePtr)))) { 
@@ -1350,7 +1360,7 @@ rfeStart:
             }
             else {
                 if (pp->left != NULL) {
-                    //debug("->left\n");
+                    debug("2->left\n");
                     if ( 1 == ( 1 & (rc =  _rdb_iterate (pool, index, fn, data,
                             del_fn, delfn_data, pp->left, start, RDB_TREE_LEFT,
                                                              resumePtr)))) { 
@@ -1422,6 +1432,7 @@ rfeStart:
                     else {   // Parent is not null
                         if (side == 0) {
                             *resumePtr = parent;
+                            //*resumePtr = (void *) parent - (sizeof (PP_T) * index);
                         }
                         else {
                             *resumePtr = NULL;
@@ -1464,7 +1475,7 @@ rfeStart:
             if (start) goto rfeStart;
         }
         else if (pp->right != NULL) {
-            //debug("->right\n");
+            debug("(3)->right\n");
             if (1 == (1 & (rc = _rdb_iterate(pool, index, fn, data, del_fn, 
                     delfn_data, pp->right, start, RDB_TREE_RIGHT, 
                                                             resumePtr)))) {
@@ -1508,12 +1519,15 @@ void rdb_iterate(
 
     resumePtr = NULL;
 
-    if (pool->root[index] == NULL)
+    if (pool->root[index] == NULL) {
+        printf("iterate called with no data\n");
         return;
+    }
 
     do {
         rc = _rdb_iterate (pool, index, fn, fn_data, del_fn, del_data,
                                 pool->root[index], NULL, 0, &resumePtr);
+	debug("rc=%d %p\n",rc, resumePtr);
     } while (rc != 0 && ( rc & RDBFE_ABORT ) != RDBFE_ABORT && 
                                                     resumePtr != NULL);
 }
@@ -1799,7 +1813,7 @@ int _rdb_delete (
                     pool->key_offset[lookupIndex], (void *) data + 
                             (pool->key_offset[lookupIndex]))) != 0) {
 retest_delete_cond:
-                debug("Delete:compare: %d idx %d\n", rc, lookupIndex);
+                debug("Delete:compare: (%d) idx (%d)\n", rc, lookupIndex);
                 rc2 = 0;
 
                 if (rc < 0) {
@@ -1812,7 +1826,7 @@ retest_delete_cond:
 
                     rc2 = _rdb_delete (pool, lookupIndex, data, ppkDead->left,
                                                     dataHead, RDB_TREE_LEFT);
-                    debug("My Bal After  %d %d\n", ppkDead->balance, rc2);
+                    debug("(L)My Bal After  %d %d\n", ppkDead->balance, rc2);
                 }
                 else if (rc > 0) {
                     // Right child
@@ -1824,7 +1838,7 @@ retest_delete_cond:
 
                     rc2 = _rdb_delete (pool, lookupIndex, data, ppkDead->right,
                                                     dataHead, RDB_TREE_RIGHT);
-                    debug("My Bal After  %d %d\n", ppkDead->balance, rc2);
+                    debug("(R)My Bal After  %d %d\n", ppkDead->balance, rc2);
                 }
 
                 if (PARENT_BAL_CNG == rc2) { // And I am the parent...
@@ -1998,7 +2012,7 @@ retest_delete_cond:
                 }
             }
             else {
-                debug("Delete:compare:- %d idx %d ppkDead = %x\n", rc, 
+                debug("Delete:compare:- _%d_ idx _%d_ ppkDead = %x\n", rc, 
                                     lookupIndex, (unsigned) ppkDead);
 
                 if (ppkDead->right != NULL && ppkDead->left != NULL) { 
@@ -2123,11 +2137,11 @@ rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data)
                 ppk = ptr + (sizeof (PP_T) * indexCount);
 
                 if (ppk->left) 
-                    ppkLeft = ppk->left + indexCount;
+                    ppkLeft = ppk->left ;//+ indexCount;
                 else ppkLeft = NULL;
 
                 if (ppk->right) 
-                    ppkRight = ppk->right + indexCount;
+                    ppkRight = ppk->right ;//+ indexCount;
                 else ppkRight = NULL;
 
                 if (pool->root[indexCount] == pool->tail[indexCount]) 

@@ -27,7 +27,7 @@
 // On how many indexes we would refferance our demo data.
 // the use of define here is not required and done for conveniance only
 
-#define TEST_INDEXES 13
+#define TEST_INDEXES 15
 // Index numbers can change when / if we add or remove indexes.
 // It's a good programing disciplan to define a name to the indexes to
 // avoid unexpected behaviour when that happens
@@ -45,9 +45,13 @@
 #define IDX_UI128   10
 #define IDX_I128    11
 #define IDX_CUSTOM  12
+#define IDX_FIFO    13
+#define IDX_LIFO    14
 //#defnie IDX_UI256
 //#defnie IDX_I256
 //
+
+#define RDB_TEST_STRING "RDB_TEST_STRING"
 
 typedef struct test_data_s {
 
@@ -299,6 +303,18 @@ int register_pool_1() {
                             (void *) &td.ud1 - (void *) &td.string,
                             RDB_KCF | RDB_KASC | RDB_BTREE,
                             compare_custom_index) == -1) return -1;
+    
+    if (rdb_register_um_idx(pool1,
+                            IDX_FIFO, 
+                            0,
+                            RDB_KFIFO | RDB_NO_IDX | RDB_BTREE,
+                            NULL) == -1) return -1;
+    
+    if (rdb_register_um_idx(pool1,
+                            IDX_LIFO, 
+                            0,
+                            RDB_KLIFO | RDB_NO_IDX | RDB_BTREE,
+                            NULL) == -1) return -1;
 
     return 0;
 }
@@ -399,6 +415,18 @@ int register_pool_2() {
                             RDB_KCF | RDB_KASC | RDB_BTREE,
                             compare_custom_index) == -1) return -1;
 
+    if (rdb_register_um_idx(pool2,
+                            IDX_FIFO, 
+                            0,
+                            RDB_KFIFO | RDB_NO_IDX | RDB_BTREE,
+                            NULL) == -1) return -1;
+    
+    if (rdb_register_um_idx(pool2,
+                            IDX_LIFO, 
+                            0,
+                            RDB_KLIFO | RDB_NO_IDX | RDB_BTREE,
+                            NULL) == -1) return -1;
+    
     return 0;
 }
 
@@ -458,6 +486,7 @@ int add_test_data (rdb_pool_t *pool, int loops) {
                     ptd->ud1 = ptd->ui8;
                     memcpy(ptd->ud2, ptd->string,5);
 
+                    //printf("%s %d %u\n", ptd->string, ptd->i32, ptd->ui32);
                          rc=rdb_insert(pool,ptd);
                     // We check that rDB was able to link all indexes. rDB will
                     // simply skip indexes it can not link-in (due to 
@@ -469,6 +498,34 @@ int add_test_data (rdb_pool_t *pool, int loops) {
           }
      }
     return 0;
+}
+
+static int my_dump_clean(void *ptr){
+	ptd=ptr;
+    printf("%d,",ptd->ui32);
+
+	return RDB_CB_OK;
+}
+
+static int my_dump_drop_2(void *ptr){
+	ptd=ptr;
+    //printf("%s %p,",ptd->string,ptd->string);
+    printf("%d,",ptd->ui32);
+
+//	if (ptd->ui32 == 10 || (ptd->ui32 == 10)) {
+//        printf("D");
+//        return RDB_CB_DELETE_NODE;
+//    }
+//        printf("k");
+	return RDB_CB_OK;
+}
+
+static int my_dump_stop_at_5(void *ptr){
+	ptd=ptr;
+    printf("%d,",ptd->ui32);
+
+	if (ptd->ui32 == 5) return RDB_CB_ABORT;
+	return RDB_CB_OK;
 }
 
 int main(int argc, char *argv[]) {
@@ -530,7 +587,14 @@ int main(int argc, char *argv[]) {
         if (-1 == add_test_data(pool1,loops))
             fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
 
-        rdb_dump(pool1,dump,",");
+        if (dump >= 13) {
+            // FIFO/LIFO - dump will show address but that's dynamic so not much
+            // value for uit tests... so we print index 0 data by order of dump
+            while ((ptd = rdb_delete(pool1,dump,NULL)) != NULL) {
+                printf("%s,",ptd->string);
+            
+            }
+        } else rdb_dump(pool1,dump,",");
 
     } else if (test == 4) {
         
@@ -540,7 +604,7 @@ int main(int argc, char *argv[]) {
         rdb_init();
         register_pools();
         if (-1 == add_test_data(pool1,4))
-            fatal(rdb_error_string);
+            fatal("%s", rdb_error_string);
         info ("%s", NULL == (ptd=rdb_get_const(pool1,2, 3)) ? "FAIL" : ptd->string );
         info ("%s", NULL == (ptd=rdb_get_const(pool1,4, 3)) ? "FAIL" : ptd->string );
         info ("%s", NULL == (ptd=rdb_get_const(pool1,6, 3)) ? "FAIL" : ptd->string );
@@ -559,7 +623,7 @@ int main(int argc, char *argv[]) {
         info ("%s", NULL == (ptd=rdb_get_const(pool1,8, 3LL)) ? "FAIL" : ptd->string );
         info ("%s", NULL == (ptd=rdb_get_const(pool1,10, 3LL)) ? "FAIL" : ptd->string );
         
-
+        
         info ("%s", NULL == (ptd=rdb_get_const(pool1,3,-3)) ? "FAIL" : ptd->string );
         info ("%s", NULL == (ptd=rdb_get_const(pool1,5,-3)) ? "FAIL" : ptd->string );
         info ("%s", NULL == (ptd=rdb_get_const(pool1,7,-3)) ? "FAIL" : ptd->string );
@@ -577,10 +641,33 @@ int main(int argc, char *argv[]) {
         info ("%s", NULL == (ptd=rdb_get_const(pool1,7,-3LL)) ? "FAIL" : ptd->string );
         info ("%s", NULL == (ptd=rdb_get_const(pool1,9,-3LL)) ? "FAIL" : ptd->string );
         info ("%s", NULL == (ptd=rdb_get_const(pool1,11,-3LL)) ? "FAIL" : ptd->string );
+        
+
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,2, 3U)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,4, 3U)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,6, 3U)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,8, 3U)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,10, 3U)) ? "FAIL" : ptd->string );
+
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,2, 3LU)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,4, 3LU)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,6, 3LU)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,8, 3LU)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,10, 3LU)) ? "FAIL" : ptd->string );
+        
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,2, 3LLU)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,4, 3LLU)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,6, 3LLU)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,8, 3LLU)) ? "FAIL" : ptd->string );
+        info ("%s", NULL == (ptd=rdb_get_const(pool1,10, 3LLU)) ? "FAIL" : ptd->string );
+        
         rdb_clean();
 
     } else if (test == 5) {
-        
+
+        int del_idx;
+        void *before, *after, *ptr;
+
         // This will test tree rotation on data inertion and deletion.
         // To avoid coming up with data, we use add_test_data() to populate pool1 and
         // selectivly morve records to pool2 (and back) in designed order to trigger the 
@@ -598,18 +685,148 @@ int main(int argc, char *argv[]) {
         // here we have pool1 filled with 16 records (index 2 = [0-15]).
         //
         //
+        
+//        info ("%s", NULL == (ptd=rdb_delete_const(pool1,2, 4)) ? "FAIL" : ptd->string );
+//        info ("%s", NULL == (ptd=rdb_delete_const(pool1,2, 4)) ? "FAIL" : ptd->string );
+//        info ("%s", NULL == (ptd=rdb_delete_const(pool1,2, 9)) ? "FAIL" : ptd->string );
+        rdb_iterate(pool1,2,(void *) &my_dump_drop_2, NULL, NULL, NULL);
+        info("%s","");
+        rdb_iterate(pool1,2,(void *) &my_dump_clean, NULL, NULL, NULL);
+        info("%s","");
+        rdb_iterate(pool1,2,(void *) &my_dump_stop_at_5, NULL, NULL, NULL);
+        info("%s","");
 
         rdb_insert (pool2, rdb_delete_const (pool1, 2, 8));
         rdb_move_const (pool2, pool1, 2, 10);
+        del_idx = 4;
+        rdb_move (pool2, pool1, 2, &del_idx);
+        del_idx = 12;
+        rdb_delete(pool1,2,&del_idx);
+
+        del_idx = 1;
+        if (NULL != rdb_get(pool1,2,&del_idx)) {
+            info("Get OK");
+        } else {
+            info("Get Fail");
+        }
+        
+        // this should fail
+        del_idx = 12;
+        if (NULL == rdb_get(pool1,2,&del_idx)) {
+            info("NULL Get OK");
+        } else {
+            info("NULL Get Fail");
+        }
+    
+        del_idx = 1;
+        before = after = NULL;
+        if (NULL != (ptr = rdb_get_neigh(pool1, 2, &del_idx, &before, &after)) && (NULL == before) && (NULL  == after)) {
+            info("Neigh Get - hit OK");
+        } else {
+            info("Neigh Get - hit Fail %p %p %p",ptr ,before, after);
+        }
+        
+        del_idx = 4;
+        before = after = NULL;
+        if (NULL == (ptr = rdb_get_neigh(pool1, 2, &del_idx, &before, &after)) && (NULL != before) && (NULL  != after)) {
+            info("Neigh Get - miss OK");
+        } else {
+            info("Neigh Get - miss Fail %p %p %p",ptr ,before, after);
+        }
 
         rdb_dump(pool1, 2, ",");
-        info("");
-        rdb_dump(pool2, 2, ",");
-        info("");
+        info("%s","");
+        rdb_dump(pool2, 2, ".");
+        info("%s","");
+
+        rdb_flush(pool1,NULL,NULL);
+        rdb_dump(pool1, 2, ",");
+        info("%s","");
+
+        info("lock %d", rdb_lock(pool1));
+        rdb_unlock(pool1);
+        info("unlock");
+
+    } else if (test == 6) {
+
+        // test various utility functione
+
+        int rc;
+
+        rdb_init();
+        register_pools();
+        
+        rc = rdb_error_value(-1,RDB_TEST_STRING);
+        if (rc != -1 || (strcmp (rdb_error_string, RDB_TEST_STRING) != 0)) {
+            fatal ("FAIL");
+        } 
+
+        rdb_error(RDB_TEST_STRING);
+        if (strcmp (rdb_error_string, RDB_TEST_STRING) != 0) {
+            fatal ("FAIL");
+
+        }
+
+    
+        pool2 = rdb_register_um_pool("copy_pool", 
+                            TEST_INDEXES, 
+                            0, // offset if first index. usually it's zero
+                            RDB_KCF | RDB_KASC | RDB_BTREE,
+                            NULL);
+        if (pool2 == NULL) info("%s", rdb_error_string);
+        
+        pool2 = rdb_register_um_pool("null_custom_pool", 
+                            TEST_INDEXES, 
+                            0, // offset if first index. usually it's zero
+                            RDB_KCF | RDB_KASC | RDB_BTREE,
+                            NULL);
+        if (pool2 == NULL) info("%s", rdb_error_string);
+     
+        if (rdb_register_um_idx(pool1,
+                            0, 
+                            (void *) &td.string_ptr- (void *) &td.string,
+                            RDB_KPSTR | RDB_KASC | RDB_BTREE,
+                            NULL) == -1) {
+            info("%s", rdb_error_string);
+        }
+        
+        if (rdb_register_um_idx(pool1,
+                            RDB_POOL_MAX_IDX, 
+                            (void *) &td.string_ptr- (void *) &td.string,
+                            RDB_KPSTR | RDB_KASC | RDB_BTREE,
+                            NULL) < 0) {
+            info("%s", rdb_error_string);
+        }
+        
+        if (rdb_register_um_idx(pool1,
+                            1, 
+                            (void *) &td.string_ptr- (void *) &td.string,
+                            RDB_KPSTR | RDB_KASC | RDB_BTREE,
+                            NULL) < 0) {
+            info("%s", rdb_error_string);
+        }
+
+        if (rdb_register_um_idx(pool1,
+                            RDB_POOL_MAX_IDX -1, 
+                            0,
+                            /*RDB_KPSTR | */  RDB_KASC | RDB_BTREE,
+                            NULL) < 0) {
+            info("%s", rdb_error_string);
+        }
+        
+        // ASC/DEC not yet implemented
+        /*if (rdb_register_um_idx(pool1,
+                            RDB_POOL_MAX_IDX -1, 
+                            0,
+                            RDB_KPSTR | RDB_BTREE,
+                            NULL) < 0) {
+            info("%s", rdb_error_string);
+        }*/
+
+        info("Ok");
 
     }
 
-    exit(0);
 
 
 
