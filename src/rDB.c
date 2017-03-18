@@ -777,22 +777,18 @@ int _rdb_insert (
                 ppkNew = (void *) data + (sizeof (PP_T) * index);
                 ppkNew->left = ppkNew->right = NULL;
                 ppkNew->balance = 0;
-	//		printf("%d)added pp=%p, data=%p\n",index ,ppkNew,data);
-            }
-            else {   // Added elemant
+            } else {   
+                // Added elemant
                 if (pool->FLAGS[index] & RDB_KFIFO) { 
                     // FIFO, add to tail, as we always read/remove from head 
                     // forward
                     ppkParent = (void *) pool->tail[index] + (sizeof (PP_T) * index);
-			//printf("tail=%p-%p %d\n", pool->tail[index], (void *) pool->tail[index] + (sizeof (PP_T) * index), index);
                     ppkNew = data + (sizeof (PP_T) * index);
                     ppkNew->left = ppkParent;// - index;
-	//printf("prev = %p\n", ppkNew->left);
                     ppkNew->right = NULL;
                     ppkParent->right = ppkNew;// - index;
                     ppkNew->balance = 0;
                     pool->tail[index] = data;
-	//		printf("%d)added pp=%p, parent=%p-%p\n",index ,ppkNew,ppkParent, ppkParent->right);
                 }
                 else if (pool->FLAGS[index] & RDB_KLIFO) {   
                     // LIFO, add to head, as we always read/remove from head 
@@ -804,7 +800,6 @@ int _rdb_insert (
                     ppkParent->left = ppkNew;// - index;
                     ppkNew->balance = 0;
                     pool->root[index] = data;
-			//printf("%d)added pp=%p, parent=%p-%p\n",index ,ppkNew,ppkParent, ppkParent->left);
                 }
             }
         }
@@ -1322,57 +1317,44 @@ int _rdb_iterate (
     int     rc, rc2 = 0;
     int     rc3 = 0;
     int     indexCount;
-                            rc = RDBFE_NODE_FIND_NEXT | (rc & RDBFE_ABORT);
 
-rfeStart:
 
     if (pool->FLAGS[index] & RDB_BTREE) {
         set_pointers (pool, index, start, &pp, &dataHead);
 
-        if (pool->FLAGS[index] & (RDB_NOKEYS)) { 
-            // FIFO/LIFO, no need to recurse
-            if (*resumePtr) {
-                set_pointers (pool, index, *resumePtr, &pp, &dataHead); 
-                *resumePtr = NULL;
+        if (*resumePtr != NULL) {
+            if ((rc3 = pool->fn[index] (dataHead + pool->key_offset[index],
+                            (void *) resumePtr + pool->key_offset[index])) < 0) {
+                debug("1->left(i=%d)\n",index);
+                if ( 1 == ( 1 & (rc =  _rdb_iterate (pool, index, fn, data,
+                                    del_fn, delfn_data, pp->left, start, RDB_TREE_LEFT,
+                                    resumePtr)))) { 
+                    // tree may have been modified
+                    // moving bit left - getting RDBFE_NODE_RESUME_ON and
+                    // not changing abort status;
+                    return (rc + 1 ); 
+                }
+                else if ( rc & RDBFE_NODE_FIND_NEXT ) {
+                    *resumePtr = dataHead;
+                    return rc - 6 ; //(leave abort status in if exist)
+                }
+                else if (rc > 1) return rc;
             }
-            else
-                set_pointers (pool, index, start, &pp, &dataHead); 
         }
         else {
-            if (*resumePtr != NULL) {
-                if ((rc3 = pool->fn[index] (dataHead + pool->key_offset[index],
-                        (void *) resumePtr + pool->key_offset[index])) < 0) {
-                    debug("1->left(i=%d)\n",index);
-                    if ( 1 == ( 1 & (rc =  _rdb_iterate (pool, index, fn, data,
-                             del_fn, delfn_data, pp->left, start, RDB_TREE_LEFT,
-                                                                resumePtr)))) { 
-                        // tree may have been modified
-                        // moving bit left - getting RDBFE_NODE_RESUME_ON and
-                        // not changing abort status;
-                        return (rc + 1 ); 
-                    }
-                    else if ( rc & RDBFE_NODE_FIND_NEXT ) {
-                        *resumePtr = dataHead;
-                        return rc - 6 ; //(leave abort status in if exist)
-                    }
-                    else if (rc > 1) return rc;
+            if (pp->left != NULL) {
+                debug("2->left\n");
+                if ( 1 == ( 1 & (rc =  _rdb_iterate (pool, index, fn, data,
+                                    del_fn, delfn_data, pp->left, start, RDB_TREE_LEFT,
+                                    resumePtr)))) { 
+                    // tree may have been modified
+                    return (rc + 1 ) ; //RDBFE_NODE_RESUME_ON);
                 }
-            }
-            else {
-                if (pp->left != NULL) {
-                    debug("2->left\n");
-                    if ( 1 == ( 1 & (rc =  _rdb_iterate (pool, index, fn, data,
-                            del_fn, delfn_data, pp->left, start, RDB_TREE_LEFT,
-                                                             resumePtr)))) { 
-                        // tree may have been modified
-                        return (rc + 1 ) ; //RDBFE_NODE_RESUME_ON);
-                    }
-                    else if ( rc & RDBFE_NODE_FIND_NEXT ) {
-                        *resumePtr = dataHead;
-                        return rc - 6 ; //
-                    }
-                    else if (rc > 1) return rc;
+                else if ( rc & RDBFE_NODE_FIND_NEXT ) {
+                    *resumePtr = dataHead;
+                    return rc - 6 ; //
                 }
+                else if (rc > 1) return rc;
             }
         }
 
@@ -1393,52 +1375,43 @@ rfeStart:
                 else rc = RDBFE_NODE_DELETED;
 
                 // Setting resume pointer to next record
-                if (pool->FLAGS[index] & (RDB_NOKEYS)) { 
-                    // FIFO/LIFO, no need to recurse -
-                    if (pp->right) {
-                        *resumePtr = (void *) pp->right - (sizeof (PP_T) * index);
+                if (pp->right) {
+                    pr = (void *) pp->right + (sizeof (PP_T) * index);
+
+                    while(pr->left != NULL) {
+                        pr = pr->left + (sizeof (PP_T) * index);
                     }
-                    else *resumePtr = NULL ;   // we are the last one;
+                    *resumePtr = (void *) pr - (sizeof (PP_T) * index);
                 }
-                else {   //TREE
-                    if (pp->right) {
-                        pr = (void *) pp->right + (sizeof (PP_T) * index);
+                else if (parent == NULL) {
+                    pr = (void *) pool->root[index] + (sizeof (PP_T) * index);
+
+                    if (pr->right) {
+                        pr = pr->right + (sizeof (PP_T) * index);
 
                         while(pr->left != NULL) {
                             pr = pr->left + (sizeof (PP_T) * index);
                         }
                         *resumePtr = (void *) pr - (sizeof (PP_T) * index);
                     }
-                    else if (parent == NULL) {
-                        pr = (void *) pool->root[index] + (sizeof (PP_T) * index);
-
-                        if (pr->right) {
-                            pr = pr->right + (sizeof (PP_T) * index);
-
-                            while(pr->left != NULL) {
-                                pr = pr->left + (sizeof (PP_T) * index);
-                            }
-                            *resumePtr = (void *) pr - (sizeof (PP_T) * index);
-                        }
-                        else {
-                            *resumePtr = NULL; 
-                            // we are removing root and there is nothing to it's
-                            // right, we are done
-                            // Signal we are done
-                            rc = RDBFE_NODE_DONE | (rc & RDBFE_ABORT);  
-                        }
-
+                    else {
+                        *resumePtr = NULL; 
+                        // we are removing root and there is nothing to it's
+                        // right, we are done
+                        // Signal we are done
+                        rc = RDBFE_NODE_DONE | (rc & RDBFE_ABORT);  
                     }
-                    else {   // Parent is not null
-                        if (side == 0) {
-                            *resumePtr = parent;
-                            //*resumePtr = (void *) parent - (sizeof (PP_T) * index);
-                        }
-                        else {
-                            *resumePtr = NULL;
-                            // Signal we still need to find next pointer
-                            rc = RDBFE_NODE_FIND_NEXT | (rc & RDBFE_ABORT);
-                        }
+
+                }
+                else {   // Parent is not null
+                    if (side == 0) {
+                        *resumePtr = parent;
+                        //*resumePtr = (void *) parent - (sizeof (PP_T) * index);
+                    }
+                    else {
+                        *resumePtr = NULL;
+                        // Signal we still need to find next pointer
+                        rc = RDBFE_NODE_FIND_NEXT | (rc & RDBFE_ABORT);
                     }
                 }
 
@@ -1468,13 +1441,7 @@ rfeStart:
             }
         }
 
-        if (pool->FLAGS[index] & (RDB_NOKEYS)) { 
-            // FIFO/LIFO, no need to recurse -
-            //
-            start = pp->right;
-            if (start) goto rfeStart;
-        }
-        else if (pp->right != NULL) {
+        if (pp->right != NULL) {
             debug("(3)->right\n");
             if (1 == (1 & (rc = _rdb_iterate(pool, index, fn, data, del_fn, 
                     delfn_data, pp->right, start, RDB_TREE_RIGHT, 
@@ -1488,6 +1455,91 @@ rfeStart:
 
     }
 
+    return 0;
+}
+
+int _rdb_iterate_list (
+        rdb_pool_t  *pool, 
+        int         index, 
+        int         fn (void *, void *), 
+        void        *data,
+        void        del_fn(void *, void*),
+        void        *delfn_data, 
+        void        *start, 
+        void        *parent, 
+        int         side, 
+        void        **resumePtr) {
+
+    void   *dataHead;
+    char   **dataField;
+    PP_T   *pp;
+    int     rc, rc2 = 0;
+    int     indexCount;
+
+rfeStart:
+
+    if (*resumePtr) {
+        set_pointers (pool, index, *resumePtr, &pp, &dataHead); 
+        *resumePtr = NULL;
+    } else
+        set_pointers (pool, index, start, &pp, &dataHead); 
+			
+
+    if (*resumePtr != NULL &&  (dataHead == *resumePtr)) *resumePtr = NULL; 
+                       // time to start working again
+
+    if (*resumePtr == NULL) {
+        rc = 0;
+
+        if (fn == NULL || RDB_CB_DELETE_NODE == (rc2 = fn (dataHead, data))
+                || RDB_CB_DELETE_NODE_AND_ABORT == rc2 || 
+                RDB_CB_ABORT == rc2 ) {
+
+            if (rc2 == RDB_CB_DELETE_NODE_AND_ABORT) 
+                rc =  RDBFE_NODE_DELETED | RDBFE_ABORT ;
+            else if (rc2 == RDB_CB_ABORT) 
+                return RDBFE_ABORT;
+            else rc = RDBFE_NODE_DELETED;
+
+            // Setting resume pointer to next record
+            if (pool->FLAGS[index] & (RDB_NOKEYS)) { 
+                // FIFO/LIFO, no need to recurse -
+                if (pp->right) {
+                    *resumePtr = (void *) pp->right - (sizeof (PP_T) * index);
+                }
+                else *resumePtr = NULL ;   // we are the last one;
+            }
+
+            for (indexCount = 0; indexCount < pool->indexCount; 
+                    indexCount++) {
+                debug ("rdb_iterate: Delete # %d\n", indexCount);
+                _rdb_delete (pool, indexCount, dataHead, NULL, NULL, 0);
+            }
+
+            if (del_fn) del_fn(dataHead, delfn_data);
+            else { 
+                // Courtesy delete of data block and dynamic indexes
+                // We have an index which is a pointer, need to free it too.
+                for (indexCount = 0; indexCount < pool->indexCount;
+                        indexCount++) if (pool->FLAGS[indexCount] &
+                            RDB_KPSTR) { 
+                            dataField = dataHead + pool->key_offset[indexCount];
+                            //debug("off = %d add %x, str %s\n",
+                            // pool->key_offset[indexCount],
+                            // (unsigned) *dataField, *dataField);
+                            if (*dataField) rdb_free(*dataField);
+                        }
+                        if (dataHead) rdb_free (dataHead);
+            }
+
+            return rc;
+        }
+    }
+
+    if (pp->right) {
+        start = (void *) pp->right - (sizeof (*pp) * index);
+        goto rfeStart;
+    }
     return 0;
 }
 
@@ -1517,17 +1569,33 @@ void rdb_iterate(
     void        *resumePtr;
     int         rc = 0;
 
-    resumePtr = NULL;
-
-    if (pool->root[index] == NULL) {
-        printf("iterate called with no data\n");
-        return;
+    if (pool == NULL) {
+        return rdb_error("rdb_iterate called with NULL pool");
     }
 
+    if (pool->root[index] == NULL) {
+        return rdb_error("iterate called with no pool->root");
+    }
+
+    if ((pool->FLAGS[index] & RDB_BTREE) == 0) {
+        return rdb_error("iterate called without RDB_BTREE flag.");
+    }
+
+    resumePtr = NULL;
+
     do {
-        rc = _rdb_iterate (pool, index, fn, fn_data, del_fn, del_data,
+        if ((pool->FLAGS[index] & (RDB_NOKEYS)) == 0) { 
+            // tree iteration
+            debug("Tree iterate - %s",pool->name);
+            rc = _rdb_iterate (pool, index, fn, fn_data, del_fn, del_data,
                                 pool->root[index], NULL, 0, &resumePtr);
-	debug("rc=%d %p\n",rc, resumePtr);
+        } else { 
+            // list iteration
+            debug("List iterate - %s",pool->name);
+            rc = _rdb_iterate_list (pool, index, fn, fn_data, del_fn, del_data,
+                                pool->root[index], NULL, 0, &resumePtr);
+        }
+	    debug("rc=%d %p\n",rc, resumePtr);
     } while (rc != 0 && ( rc & RDBFE_ABORT ) != RDBFE_ABORT && 
                                                     resumePtr != NULL);
 }
@@ -1778,10 +1846,10 @@ int _rdb_delete (
         if (pool->FLAGS[indexCount] & (RDB_NOKEYS)) {
             ppk = ptr + (sizeof (PP_T) * indexCount);
 
-            if (ppk->left) ppkLeft = ppk->left + indexCount;
+            if (ppk->left) ppkLeft = ppk->left ;
             else ppkLeft = NULL;
 
-            if (ppk->right) ppkRight = ppk->right + indexCount;
+            if (ppk->right) ppkRight = ppk->right ;
             else ppkRight = NULL;
 
             if (pool->root[indexCount] == pool->tail[indexCount]) 

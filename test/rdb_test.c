@@ -430,10 +430,29 @@ int register_pool_2() {
     return 0;
 }
 
+int register_pool_3() {
+
+    pool3 = rdb_register_um_pool("no_keys_pool", 
+                            2, 
+                            0, // offset if first index. usually it's zero
+                            RDB_KFIFO | RDB_NO_IDX | RDB_BTREE,
+                            NULL);
+    if (pool3 == NULL) return -1;
+
+    if (rdb_register_um_idx(pool3,
+                            1, 
+                            0,
+                            RDB_KLIFO | RDB_NO_IDX | RDB_BTREE,
+                            NULL) == -1) return -1;
+    
+    return 0;
+}
+
 int register_pools() {
 
     if (-1 == register_pool_1()) fatal("Failed registring pool 1");
     if (-1 == register_pool_2()) fatal("Failed registring pool 2");
+    if (-1 == register_pool_3()) fatal("Failed registring pool 3");
     return 0;
 }
 
@@ -491,7 +510,10 @@ int add_test_data (rdb_pool_t *pool, int loops) {
                     // We check that rDB was able to link all indexes. rDB will
                     // simply skip indexes it can not link-in (due to 
                     // duplicates, for example)
-                         if (rc!=TEST_INDEXES) return -1; 
+                         if (rc!=TEST_INDEXES) {
+                             info("Reduced index coverage test");
+                             //return -1; 
+                         }
                         //fatal ("%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
                     }
                }
@@ -509,14 +531,11 @@ static int my_dump_clean(void *ptr){
 
 static int my_dump_drop_2(void *ptr){
 	ptd=ptr;
-    //printf("%s %p,",ptd->string,ptd->string);
-    printf("%d,",ptd->ui32);
 
-//	if (ptd->ui32 == 10 || (ptd->ui32 == 10)) {
-//        printf("D");
-//        return RDB_CB_DELETE_NODE;
-//    }
-//        printf("k");
+	if (ptd->ui32 == 2 ) {
+        return RDB_CB_DELETE_NODE;
+    }
+    printf("%d,",ptd->ui32);
 	return RDB_CB_OK;
 }
 
@@ -665,6 +684,8 @@ int main(int argc, char *argv[]) {
 
     } else if (test == 5) {
 
+        dump = 13;
+
         int del_idx;
         void *before, *after, *ptr;
 
@@ -681,19 +702,19 @@ int main(int argc, char *argv[]) {
         register_pools();
         if (-1 == add_test_data(pool1,2))
             fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
+//        if (-1 == add_test_data(pool3,2))
+//            fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
         
         // here we have pool1 filled with 16 records (index 2 = [0-15]).
-        //
-        //
         
 //        info ("%s", NULL == (ptd=rdb_delete_const(pool1,2, 4)) ? "FAIL" : ptd->string );
 //        info ("%s", NULL == (ptd=rdb_delete_const(pool1,2, 4)) ? "FAIL" : ptd->string );
 //        info ("%s", NULL == (ptd=rdb_delete_const(pool1,2, 9)) ? "FAIL" : ptd->string );
-        rdb_iterate(pool1,2,(void *) &my_dump_drop_2, NULL, NULL, NULL);
+        rdb_iterate(pool1,dump,(void *) &my_dump_clean, NULL, NULL, NULL);
+        info("%s",""); 
+        rdb_iterate(pool1,dump,(void *) &my_dump_drop_2, NULL, NULL, NULL);
         info("%s","");
-        rdb_iterate(pool1,2,(void *) &my_dump_clean, NULL, NULL, NULL);
-        info("%s","");
-        rdb_iterate(pool1,2,(void *) &my_dump_stop_at_5, NULL, NULL, NULL);
+        rdb_iterate(pool1,dump,(void *) &my_dump_stop_at_5, NULL, NULL, NULL);
         info("%s","");
 
         rdb_insert (pool2, rdb_delete_const (pool1, 2, 8));
@@ -738,9 +759,11 @@ int main(int argc, char *argv[]) {
         info("%s","");
         rdb_dump(pool2, 2, ".");
         info("%s","");
-
+        
+        //info("%s","Empty Dump Start");
         rdb_flush(pool1,NULL,NULL);
         rdb_dump(pool1, 2, ",");
+        //info("%s","Empty Dump End - there should be nothing between START and END");
         info("%s","");
 
         info("lock %d", rdb_lock(pool1));
