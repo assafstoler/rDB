@@ -47,8 +47,8 @@
 #include <stdio.h>                              //printf,
 #include <stdlib.h>                             //exit,
 #include <string.h>                             //strcmp,
-#include "rDB.h"
 #include <pthread.h>
+#include "rDB.h"
 
 #define rdb_free(a) free(a)
 #define rdb_alloc(a) malloc (a);
@@ -90,23 +90,6 @@ int     levels,
 
 //#define DEBUG
 
-#ifdef DEBUG
-#ifdef KM
-#define debug(b,arg...) printk(b,##arg)
-#else
-#define debug(b,arg...) do { fprintf(stdout,b,##arg); fflush(stdout); } while (0)
-#endif
-#else
-#define debug(b,arg...)
-#endif
-
-#ifdef KM
-#define info(b,arg...) printk(b,##arg)
-#else
-#define info(b,arg...) do { fprintf(stdout,b,##arg); fflush(stdout); } while (0)
-#endif
-
-
 
 #ifdef KM
 struct semaphore reg_mutex;
@@ -135,8 +118,10 @@ int rdb_error_value (int rv, char *err)
 {
 #ifdef KM
 
-    if (rdb_error_string != NULL)
+    if (rdb_error_string != NULL) {
         kfree (rdb_error_string);
+        rdb_error_string = NULL;
+    }
 
     rdb_error_string = kmalloc (strlen (err) + 1, GFP_KERNEL);
 #else
@@ -265,6 +250,42 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
     return 0;
 }
 
+// rDB Iternal: drop a new pool from our pool chain
+void rdb_drop_pool (rdb_pool_t *pool) {
+    rdb_pool_t *prev, *next;
+
+    if (pool && pool->name) info("dropping %s\n", pool->name);
+    else return;
+
+    next=pool->next;
+    prev=pool->prev;
+
+    if (prev) {
+        prev->next = pool->next;
+    }
+    if (next) {
+        next->prev = pool->prev;
+    }
+    if (pool_root == pool) {
+        if (prev) {
+            pool_root = prev;
+        } else if (next) {
+            pool_root = next;
+        } else {
+            pool_root = NULL;
+        }
+    }
+
+    if (pool->name) {
+        info ("freeing %s\n", pool->name);
+        rdb_free (pool->name);
+    }
+
+    if (pool) rdb_free(pool) ;
+
+    return;
+}
+
 // rDB Iternal: Add a new pool to our pool chain
 rdb_pool_t *rdb_add_pool (
         char *poolName, 
@@ -362,7 +383,13 @@ rdb_pool_t *rdb_register_um_pool (
 
 // Remove rDB traces. use before exit() or when rDB no longer needed.
 // Use rdb_init after, to re_start rDB
-void rdb_clean(void) {
+
+// rdb_gc: drop pools that ae marged for dropping. pools must be empty first.
+void rdb_gc() {
+    rdb_clean(1);
+}
+
+void rdb_clean(int gc) {
     rdb_pool_t  *pool, 
                 *pool_next;
 
@@ -371,13 +398,41 @@ void rdb_clean(void) {
 
         while (pool != NULL) {
             pool_next = pool->next;
-            rdb_free (pool->name);
-            rdb_free (pool);
+
+            if (gc == 0 || (gc == 1 && pool->drop)) { 
+                rdb_drop_pool (pool);
+            }
+
             pool = pool_next;
         }
     }
 
-    pool_root = NULL;
+    if (!gc && rdb_error_string) {
+        rdb_free (rdb_error_string);
+    }
+
+    return ;
+}
+
+void rdb_print_pools(void *out) {
+    rdb_pool_t  *pool, 
+                *pool_next;
+
+    if (pool_root != NULL) {
+        pool = pool_root;
+
+        while (pool != NULL) {
+            pool_next = pool->next;
+            //rdb_flush(pool,NULL,NULL);
+#ifdef KM
+            printk("%s\n", pool->name);
+#else
+            FILE *fp = out;
+            fprintf(fp,"%s\n", pool->name);
+#endif
+            pool = pool_next;
+        }
+    }
     return ;
 }
 
@@ -385,17 +440,24 @@ void rdb_clean(void) {
 int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
         int FLAGS, void *compare_fn) {
     rdb_sem_lock(&reg_mutex);
-    if (idx == 0)
+    if (idx == 0) {
+        rdb_sem_unlock(&reg_mutex);
         return (rdb_error_value (-1, 
             "Index 0 (zero) can only be set via rdb_register_pool"));
+    }
 
-    if (idx >= RDB_POOL_MAX_IDX)
+    if (idx >= RDB_POOL_MAX_IDX) {
+        rdb_sem_unlock(&reg_mutex);
         return (rdb_error_value (-2, "Index >= RDB_POOL_MAX_IDX"));
+    }
 
-    if (pool->FLAGS[idx] != 0)
+    if (pool->FLAGS[idx] != 0) {
+        rdb_sem_unlock(&reg_mutex);
         return (rdb_error_value (-3, "Redefinition of used index not allowed"));
+    }
 
     if (-1 == set_pool_fn_pointers(pool, idx, FLAGS, compare_fn)){
+        rdb_sem_unlock(&reg_mutex);
         return (rdb_error_value (-4,
             "Index Registration without valid type or compare fn. Ignored"));
     }
@@ -615,7 +677,7 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
             //searchNext = (void **) pp;
             //key = (void *) searchNext + pool->key_offset[0];
             //info ("%s%s", &key->str, separator);
-            info ("%p%s", pp, separator);
+            c_info ("%p%s", pp, separator);
             pp = pp->right;
         }
     } else if (pool->FLAGS[index] & RDB_BTREE && (pool->FLAGS[index] & RDB_KEYS)) {
@@ -637,43 +699,43 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
 
         switch (pool->FLAGS[index] & RDB_KEYS) {
             case RDB_KPSTR:
-                info ("%s%s", key->pStr, separator);
+                c_info ("%s%s", key->pStr, separator);
                 break;
 
             case RDB_KSTR:
-                info ("%s%s", &key->str, separator);
+                c_info ("%s%s", &key->str, separator);
                 break;
 
             case RDB_KINT8:
-                info ("%hhd%s", key->i8, separator);
+                c_info ("%hhd%s", key->i8, separator);
                 break;
 
             case RDB_KINT16:
-                info ("%hd%s", key->i16, separator);
+                c_info ("%hd%s", key->i16, separator);
                 break;
 
             case RDB_KINT32:
-                info ("%ld%s", (long) key->i32, separator);
+                c_info ("%ld%s", (long) key->i32, separator);
                 break;
 
             case RDB_KINT64:
-                info ("%lld%s", (long long int) key->i64, separator);
+                c_info ("%lld%s", (long long int) key->i64, separator);
                 break;
 
             case RDB_KUINT8:
-                info ("%hhu%s", key->u8, separator);
+                c_info ("%hhu%s", key->u8, separator);
                 break;
 
             case RDB_KUINT16:
-                info ("%hu%s", key->u16, separator);
+                c_info ("%hu%s", key->u16, separator);
                 break;
 
             case RDB_KUINT32:
-                info ("%lu%s", (unsigned long) key->u32, separator);
+                c_info ("%lu%s", (unsigned long) key->u32, separator);
                 break;
 
             case RDB_KUINT64:
-                info ("%llu%s", (unsigned long long) key->u64, separator);
+                c_info ("%llu%s", (unsigned long long) key->u64, separator);
                 break;
 
             //TODO: this is a bug, data below may be truncated.
@@ -681,17 +743,17 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
             //
 #ifdef USE_128_BIT_TYPES
             case RDB_KUINT128:
-                info ("%llu%s", (unsigned long long) key->u128, separator);
+                c_info ("%llu%s", (unsigned long long) key->u128, separator);
                 break;
 
             case RDB_KINT128:
-                info ("%lld%s", (long long) key->u128, separator);
+                c_info ("%lld%s", (long long) key->u128, separator);
                 break;
 #endif
             // we can't print custom functions data so we print the address
             // TODO: Consider adding a print-to-str fn() hook to pool, so we can dump custom-index data
             case RDB_KCF:
-                info ("%p%s", key, separator);
+                c_info ("%p%s", key, separator);
                 break;
  /*           case RDB_KTME:
                 printoutalways ("Dump_TME: %ld:%ld\n", key->tv.tv_sec, key->tv.tv_usec);
@@ -724,13 +786,19 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
 
 }
 
-int rdb_lock(rdb_pool_t *pool) 
+int rdb_lock(rdb_pool_t *pool, const char *parent) 
 {
+#ifdef RDB_LOCK_DEBUG
+    info("RDBL    %s by %s\n", pool->name, parent);
+#endif
     return rdb_sem_lock(&pool->write_mutex);
 }
 
-void rdb_unlock(rdb_pool_t *pool) 
+void rdb_unlock(rdb_pool_t *pool, const char *parent) 
 {
+#ifdef RDB_LOCK_DEBUG
+    info("RDb-UL %s - %s\n", pool->name, parent);
+#endif
     rdb_sem_unlock(&pool->write_mutex);
     return ;
 }
@@ -1062,11 +1130,14 @@ int rdb_insert (rdb_pool_t *pool, void *data)
     int     indexCount;
     int     rc = 0;
   
-    if (data != NULL) 
+    if (data != NULL) {
         for (indexCount = 0; indexCount < pool->indexCount; indexCount++)
             (_rdb_insert (pool, data, pool->root[indexCount], 
                 indexCount, NULL, 0) < 0) ? rc : rc++;
-    else
+#ifdef RDB_POOL_COUNTERS
+        if (rc > 0) pool->record_count++;
+#endif
+    } else
         rc = -1;
 
     return rc;
@@ -1684,7 +1755,7 @@ void _rdb_flush_list(
  * This fn should free the allocated memory (ptr), and any additionali
  * dynamic allocations tied to it.
  *
- * fni() is optional but is highly recommanded. if it is missing (NULL), 
+ * fn() is optional but is highly recommanded. if it is missing (NULL), 
  * rdb will free ptr for you, but it will not know how to free any dynamic 
  * allocations tied to it, so If there is any, and fn is null, 
  * memoty leak will occur.
@@ -1705,6 +1776,10 @@ void rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data)
     for (cnt = 0; cnt < pool->indexCount; cnt++)
         if (pool->root[cnt])
             pool->root[cnt] = NULL;
+
+#ifdef RDB_POOL_COUNTERS
+    pool->record_count = 0;
+#endif
 
 }
 
@@ -2242,6 +2317,10 @@ rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data)
             debug ("Can't locate delete item\n");
 
     }
+
+#ifdef RDB_POOL_COUNTERS
+    if (ptr != NULL) pool->record_count--;
+#endif
 
     return ptr;
 }

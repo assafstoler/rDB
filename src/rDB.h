@@ -12,6 +12,60 @@
 extern "C" {
 #endif
 
+#ifdef DEBUG
+#ifdef KM
+#define debug(b,arg...) printk(b,##arg)
+#else
+
+#define debug(b,arg...) do { fprintf(stdout, "%20s:%d: ",__FUNCTION__,__LINE__); fprintf(stdout,b,##arg); fflush(stdout); } while (0)
+#endif
+#else
+#define debug(b,arg...)
+#endif
+
+#ifdef KM
+// Kernel output    
+#define info(b,arg...)  do {     \
+    printk("%s: ",__FUNCTION__); \
+    printk(b,##arg);            \
+    } while (0)
+#define c_info(b,arg...) printk(b,##arg)
+#define fatal(b,arg...) do {    \
+    info(b,##arg);              \
+    } while (0)
+
+#else
+// Userspace 
+#define fatal(b,arg...) do {    \
+    fprintf(stderr,b,##arg);    \
+    fflush(stderr);             \
+    exit(-1);                   \
+} while (0)
+
+#define c_info(b,arg...)  do {    \
+    fprintf(stdout,b,##arg);    \
+    fflush(stdout);             \
+    } while (0)
+#define info(b,arg...)  do {    \
+        fprintf(stdout, "%20s: ",__FUNCTION__); \
+        c_info(b,##arg); \
+    } while (0)
+#define l_info(l,b,arg...)  do {    \
+    if (l==0 || l & DEBUG_FLAGS) { \
+        fprintf(stdout, "%20s: ",__FUNCTION__); \
+        c_info(b,##arg); \
+    } \
+    } while (0)
+#endif
+
+#ifdef KM
+#define error(b,arg...) printk(b,##arg)
+#else
+#define error(b,arg...) do { fprintf(stderr, "%20s:%d: ",__FUNCTION__,__LINE__); fprintf(stderr,b,##arg); fflush(stderr); } while (0)
+#endif
+
+//#define RDB_LOCK_DEBUG
+
 #define RDB_KFIFO   (1 << 0 )   // No key - make a FIFO in essence. uses one BPP_t 
 #define RDB_KLIFO   (1 << 1 )   // No key - make a LIFO / stack in essence. uses one BPP_t 
 #define RDB_KCF     (1 << 2 )   // use custom function to check index order. key type N/A
@@ -145,6 +199,7 @@ typedef struct RDB_POOLS {
 
     // Number of indexs this data poll have
     unsigned char 	indexCount;
+    unsigned char   drop;   // if true, pool is to be GC'ed
 
     // Number of bytes into the data structure to find the sort key
     unsigned int 	key_offset[RDB_POOL_MAX_IDX];
@@ -165,6 +220,9 @@ typedef struct RDB_POOLS {
     pthread_mutex_t read_mutex;
 #endif
     //   rdb_index_data_t**  index_data;             ///< index data master containder - dynamic
+#ifdef RDB_POOL_COUNTERS
+    uint32_t        record_count;
+#endif
 }  rdb_pool_t;
 
 
@@ -177,11 +235,12 @@ rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset,
                 int FLAGS, void *compare_fn);
 rdb_pool_t *rdb_register_um_pool (char *poolName, 
 	            int idxCount, int key_offset, int FLAGS, void *fn);
-void        rdb_clean(void);
+void        rdb_clean(int);
+void        rdb_gc(void);
 int         rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
                 int FLAGS, void *compare_fn);
-int         rdb_lock(rdb_pool_t *pool); 
-void         rdb_unlock(rdb_pool_t *pool) ;
+int         rdb_lock(rdb_pool_t *pool, const char *parent); 
+void         rdb_unlock(rdb_pool_t *pool, const char *parent);
 int         rdb_insert (rdb_pool_t *pool, void *data);
 int         rdb_insert_one (rdb_pool_t *pool, int index, void *data);
 void       *rdb_get (rdb_pool_t *pool, int idx, void *data);
@@ -195,6 +254,8 @@ int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
 void       *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value);
 void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value);
 void       *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data);
+void        rdb_drop_pool (rdb_pool_t *pool);
+void        rdb_print_pools(void *fp);
 
 //void        _rdb_dump (rdb_pool_t *, int index, void *start);
 void        rdb_dump (rdb_pool_t *pool, int index, char *separator);

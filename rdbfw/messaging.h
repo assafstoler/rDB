@@ -1,20 +1,10 @@
 #ifndef MESSAGING_H
 #define MESSAGING_H
 
+#include "rdbfw.h"
+
 #define RDBMSG_RC_NO_MATCH       0
 #define RDBMSG_RC_IS_SUBSCRIBER  1
-
-// simple way to emit an 'empty' message - a message which carry no payload
-//rdbmsg_emit_empty(int from, int to, int grp, int msg, int legacy); 
-
-void rdbmsg_register_hooks(void);
-
-int rdbmsg_init(rdb_pool_t *plugin_pool);
-int rdbmsg_request(void  *ctx, int from, int to, int group, int id);
-int rdbmsg_emit_simple(int from, int to, int group, int id, int data);
-int rdbmsg_delay_HZ(int new_Hz);
-
-rdb_pool_t *empty_msg_store;
 
 // Note: The following 4 enum's does not overlap.
 // This was done to allow delivery speed optimizations.
@@ -117,5 +107,15 @@ typedef struct rdbmsg_queue_s {
     rdb_bpp_t               pp[1];      // Required for rDB unmanaged tree.
     rdbmsg_msg_t             msg;
 } rdbmsg_queue_t;
+
+
+void rdbmsg_register_hooks(void);
+
+int rdbmsg_init(rdb_pool_t *plugin_pool);
+int rdbmsg_request(void  *ctx, int from, int to, int group, int id);
+int rdbmsg_emit_simple(int from, int to, int group, int id, int data);
+int rdbmsg_delay_HZ(int new_Hz);
+int rdbmsg_free (plugins_t *ctx, rdbmsg_queue_t *q);
+void rdbmsg_destroy_tree (void *data, void *user_ptr, int stage);
 
 #endif

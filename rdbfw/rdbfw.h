@@ -1,3 +1,6 @@
+
+#ifndef __RDBFW_H
+#define __RDBFW_H
 /***
  * Below are defined the functions that may be supported by loadable modules.
  *
@@ -43,6 +46,8 @@
  ***/
 #include "rDB.h"
 
+#define MAX_THREAD_RETRY 10
+
 typedef struct rdbfw_plugin_api_s {
     void (*init)(void *);                // Initilize the module, if requited (allocation, zero of pointers)
     void (*make_depend)(void *);
@@ -65,6 +70,8 @@ typedef enum {
     RDBFW_STATE_GASPING,
     RDBFW_STATE_STOPPING,
     RDBFW_STATE_STOPPED,
+    RDBFW_STATE_STOPALL,    // tells the framework to stop all tasks, ie, after fatal error // self won't be called to stop as it aborted
+    RDBFW_STATE_SOFTSTOPALL,    // tells the framework to stop all tasks, ie, normal stop requst. even SELF need ot be stopped
 } rdbfw_plugin_state_e ;
 
 typedef struct plugins_s {
@@ -81,6 +88,7 @@ typedef struct plugins_s {
     rdb_pool_t              *msg_dispatch_root;
     uint32_t                msg_pending_count;      
     pthread_mutex_t         msg_mutex;
+    pthread_mutex_t         startup_mutex;
     pthread_cond_t          msg_condition;
 #ifdef MSG_ACCOUNTING
     uint64_t                msg_rx_count;
@@ -91,4 +99,12 @@ typedef struct plugins_s {
 #endif
 } plugins_t;
 
-uint64_t wake_count_limit;
+extern uint64_t wake_count_limit;
+
+#ifdef SHARED_ONLY
+//This function exists as an entrypoint for when the used as a shared library - linked with another app.
+//Pass argc and argv into it as you would normally use the command line version of this function.
+int rdbfw_main(int argc, char *argv[]);
+#endif
+
+#endif

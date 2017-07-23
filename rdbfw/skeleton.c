@@ -4,12 +4,12 @@
 #include <string.h>
 #include <pthread.h>
 #include <dlfcn.h>
+#include <errno.h>
 
 #include "rDB.h"
 #include "messaging.h"
 #include "rdbfw.h"
-
-static int rc;
+#include "log.h"
 
 extern pthread_mutex_t timed_mutex;
 extern pthread_cond_t timed_condition;
@@ -21,14 +21,12 @@ static pthread_attr_t attr;
     
 static plugins_t *ctx;
 static int break_requested = 0;
-static int xxx=0;
-void *skeleton_main(void *p) {
-    rdbmsg_queue_t *q;
 
-    printf("Starting %s\n", ctx->name);
-    ctx->state = RDBFW_STATE_RUNNING;
+static void *skeleton_main(void *p) {
 
-    //pthread_mutex_lock(&ctx->msg_mutex);
+    log (LOG_INFO, "Starting %s\n", ctx->name);
+
+    pthread_mutex_unlock(&ctx->startup_mutex);
 
     while (break_requested == 0) {
 	// Here we do some work ... this will be an infinite loop
@@ -50,10 +48,18 @@ void *skeleton_main(void *p) {
 
 }
 
-void skeleton_init(void *p) {
+static void skeleton_destroy(void *p) {
     ctx = p;
     
-    printf("Initilizing %s\n", ctx->name);
+    log (LOG_INFO, "Destroy %s\n", ctx->name);
+    ctx->state = RDBFW_STATE_LOADED;
+
+}
+
+static void skeleton_init(void *p) {
+    ctx = p;
+    
+    log (LOG_INFO, "Initilizing %s\n", ctx->name);
 
     pthread_mutex_init(&ctx->msg_mutex, NULL);
     pthread_cond_init(&ctx->msg_condition, NULL);
@@ -63,16 +69,63 @@ void skeleton_init(void *p) {
 
 }
 
-void skeleton_start(void *p) {
-    rc = pthread_create( &skeleton_main_thread, &attr, skeleton_main, NULL);
+static void skeleton_start(void *p) {
+    int rc;
+    int cnt = 0;
+
+    pthread_mutex_lock(&ctx->startup_mutex);
+    while (1) {
+        rc = pthread_create( &skeleton_main_thread, &attr, skeleton_main, NULL);
+        if (rc == 0) {
+            break;
+        }
+        if (rc == EAGAIN) {
+            if (cnt > MAX_THREAD_RETRY) {
+                log (LOG_ERROR, "Thread creation failed, MAX_THREAD_RETRY exusted\n");
+                ctx->state = RDBFW_STATE_STOPALL;
+                return;
+            } 
+            else {
+                cnt++;
+                log (LOG_ERROR, "Thread creation failed, will retry\n");
+                usleep (100000);
+                continue;
+            }
+        }
+        else if (rc == EPERM) {
+            log (LOG_ERROR, "Thread creation failed - missing permissions - aborting\n");
+            ctx->state = RDBFW_STATE_STOPALL;
+            return;
+        }
+        else if (rc == EINVAL) {
+            log (LOG_ERROR, "Thread creation failed - Invalid attribute - aborting\n");
+            ctx->state = RDBFW_STATE_STOPALL;
+            return;
+        }
+    }
+    
+    pthread_mutex_lock(&ctx->startup_mutex);
+    ctx->state = RDBFW_STATE_RUNNING;
+    pthread_mutex_unlock(&ctx->startup_mutex);
 }
 
-void skeleton_stop(void *p) {
+static void skeleton_stop(void *p) {
     break_requested = 1;
+    
+    // even though we set break_requested to one we also need to
+    // make sure it's awake after that moment, to it can be processed.
+    // the join will ensure we dont quit until out internal threads did.
+    pthread_mutex_lock(&ctx->msg_mutex);
+    pthread_cond_signal(&ctx->msg_condition);
+    pthread_mutex_unlock(&ctx->msg_mutex);
+    pthread_join(skeleton_main_thread, NULL);
+
+    ctx->state = RDBFW_STATE_STOPPED;
 }
 
-const rdbfw_plugin_api_t rdbfw_fns = {
+const rdbfw_plugin_api_t skeleton_rdbfw_fns = {
     .init = skeleton_init,
     .start = skeleton_start,
     .stop = skeleton_stop,
+    .de_init = skeleton_destroy,
 };
