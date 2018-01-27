@@ -93,10 +93,12 @@ int     levels,
 
 #ifdef KM
 struct semaphore reg_mutex;
+struct semaphore rdb_error_mutex;
 #define rdb_sem_lock(A) down_interruptible(A)
 #define rdb_sem_unlock(A) up(A)
 #else
 pthread_mutex_t reg_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t rdb_error_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define rdb_sem_lock(A) pthread_mutex_lock(A)
 #define rdb_sem_unlock(A) pthread_mutex_unlock(A)
 #endif
@@ -106,6 +108,7 @@ void rdb_init (void)
 {
 #ifdef KM
     sema_init(&reg_mutex, 1);
+    sema_init(&rdb_error_mutex, 1);
 #endif
     pool_root = NULL;
 }
@@ -116,6 +119,7 @@ void rdb_init (void)
 // library user can later print that string to errno/errstr or similar.
 int rdb_error_value (int rv, char *err)
 {
+    rdb_sem_lock(&rdb_error_mutex);
 #ifdef KM
 
     if (rdb_error_string != NULL) {
@@ -134,12 +138,15 @@ int rdb_error_value (int rv, char *err)
     else
         strcpy (rdb_error_string, err);
 
+    rdb_sem_unlock(&rdb_error_mutex);
+
     return rv;
 }
 
 // Same as above, without returning a value
 void rdb_error (char *err)
 {
+    rdb_sem_lock(&rdb_error_mutex);
 #ifdef KM
 
     if (rdb_error_string != NULL)
@@ -155,6 +162,8 @@ void rdb_error (char *err)
                 " \"%s\"\n", err);
     else
         strcpy (rdb_error_string, err);
+
+    rdb_sem_unlock(&rdb_error_mutex);
 }
 
 // If you lost your pool handle, or more likely, you are working in a multi-
@@ -409,6 +418,7 @@ void rdb_clean(int gc) {
 
     if (!gc && rdb_error_string) {
         rdb_free (rdb_error_string);
+        rdb_error_string = NULL;
     }
 
     return ;
@@ -1166,6 +1176,10 @@ void   *_rdb_get (
             debug("GetFail - pool=%s, Null rool node\n",pool->name);
             return (NULL);
         } else {
+            if (pool->FLAGS[index] & (RDB_NOKEYS)) {
+                return pool->root[index];
+
+            }
             set_pointers (pool, index, start, &ppk, &dataHead);
 
             if (data == NULL ) {
