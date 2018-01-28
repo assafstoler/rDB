@@ -557,9 +557,9 @@ int add_test_data (rdb_pool_t *pool, int loops) {
                     ptd->ud1 = ptd->ui8;
                     memcpy(ptd->ud2, ptd->string,5);
 
-                    printf("%s %d %u\n", ptd->string, ptd->i32, ptd->ui32);
+                    //printf("%s %d %u\n", ptd->string, ptd->i32, ptd->ui32);
                          rc=rdb_insert(pool,ptd);
-                         printf("rc=%d\n", rc);
+                         //printf("rc=%d\n", rc);
                     // We check that rDB was able to link all indexes. rDB will
                     // simply skip indexes it can not link-in (due to 
                     // duplicates, for example)
@@ -576,69 +576,70 @@ int add_test_data (rdb_pool_t *pool, int loops) {
 }
 
 int add_one_test_data (rdb_pool_t *pool, int loops) {
-     int rc,a,b,c,d;
-     
+    int rc,a,b,c,d;
+
     for (a=0; a<loops; a++) {
-          for (b=0; b<loops; b++) {
-               for (c=0; c<loops; c++) {
-                    for (d=0; d<loops; d++) {
-                         one_ptd=malloc(sizeof(test_data_one_t));
-                         if (one_ptd==NULL) fatal("Allocation error in %s\n",__FUNCTION__);
-                         one_ptd->string_ptr = calloc(1,16);
-                         if (one_ptd->string_ptr == NULL) return -1;
-                         one_ptd->string[0]='A' + d;
-                         one_ptd->string[1]='A' + c;
-                         one_ptd->string[2]='A' + b;
-                         one_ptd->string[3]='A' + a;
-                         one_ptd->string[4]=0;
-                         *(one_ptd->string_ptr)='a' + d;
+        for (b=0; b<loops; b++) {
+            for (c=0; c<loops; c++) {
+                for (d=0; d<loops; d++) {
+                    one_ptd=calloc(1,sizeof(test_data_one_t));
+                    if (one_ptd==NULL) fatal("Allocation error in %s\n",__FUNCTION__);
+                    one_ptd->string_ptr = calloc(1,16);
+                    if (one_ptd->string_ptr == NULL) return -1;
+                    one_ptd->string[0]='A' + d;
+                    one_ptd->string[1]='A' + c;
+                    one_ptd->string[2]='A' + b;
+                    one_ptd->string[3]='A' + a;
+                    one_ptd->string[4]=0;
+                    *(one_ptd->string_ptr)='a' + d;
                     *(one_ptd->string_ptr+1)='a' + c;
                     *(one_ptd->string_ptr+2)='a' + b;
-                         *(one_ptd->string_ptr+3)='a' + a;
+                    *(one_ptd->string_ptr+3)='a' + a;
                     // We could have pre-calculated the various LOOPS powers out
                     // of this loop, to increase perfoemance, but not an issue
                     // for this test
 #ifdef USE_128_BIT_TYPES
                     one_ptd->ui128 = d + (c * loops) + (b * pow(loops, 2)) + 
-                                                    (a * pow(loops, 3)) ;
+                        (a * pow(loops, 3)) ;
                     one_ptd->i128 = one_ptd->ui128 * -1;
-                    
+
                     one_ptd->ui64 = one_ptd->ui128;
                     one_ptd->i64 = one_ptd->i128;
+                    //printf("%ld %s\n", one_ptd->ui64, one_ptd->string);
 #else
                     one_ptd->ui64 = d + (c * loops) + (b * pow(loops, 2)) + 
-                                                    (a * pow(loops, 3)) ;
+                        (a * pow(loops, 3)) ;
                     one_ptd->i64 = one_ptd->ui64 * -1;
 #endif                    
                     one_ptd->ui32 = one_ptd->ui64;
                     one_ptd->i32 = one_ptd->i64;
-                    
+
                     one_ptd->ui16 = one_ptd->ui64;
                     one_ptd->i16 = one_ptd->i64;
 
                     one_ptd->ui8 = one_ptd->ui64;
                     one_ptd->i8 = one_ptd->i64;
-                
+
                     // those two will make a unique index together...
                     // udq will repeat itself, but combined with ud2 no issue
                     one_ptd->ud1 = one_ptd->ui8;
                     memcpy(one_ptd->ud2, one_ptd->string,5);
 
-                    printf("%s %d %u\n", one_ptd->string, one_ptd->i32, one_ptd->ui32);
-                         rc=rdb_insert(pool,one_ptd);
-                         printf("rc=%d\n", rc);
+                    //printf("%s %d %u\n", one_ptd->string, one_ptd->i32, one_ptd->ui32);
+                    rc=rdb_insert(pool,one_ptd);
+                    //printf("rc=%d\n", rc);
                     // We check that rDB was able to link all indexes. rDB will
                     // simply skip indexes it can not link-in (due to 
                     // duplicates, for example)
-                         if (rc!=TEST_INDEXES) {
-                             debug("Reduced index coverage test\n");
-                             //return -1; 
-                         }
-                        //fatal ("%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
+                    if (rc!=TEST_INDEXES) {
+                        debug("Reduced index coverage test\n");
+                        //return -1; 
                     }
-               }
-          }
-     }
+                    //fatal ("%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
+                }
+            }
+        }
+    }
     return 0;
 }
 
@@ -668,8 +669,8 @@ static int my_dump_stop_at_5(void *ptr){
 }
 static int my_dump_one_clean(void *ptr){
 	one_ptd=ptr;
-    printf("*\n");
-    printf("%d,",one_ptd->ui32);
+    //printf("*\n");
+    printf("%d,",one_ptd->ui32); //, one_ptd->string);
 
 	return RDB_CB_OK;
 }
@@ -678,6 +679,7 @@ static int my_dump_one_drop_2(void *ptr){
 	one_ptd=ptr;
 
 	if (one_ptd->ui32 == 2 ) {
+        //printf("-:%d,",one_ptd->ui32);
         return RDB_CB_DELETE_NODE;
     }
     printf("%d,",one_ptd->ui32);
@@ -836,9 +838,9 @@ int main(int argc, char *argv[]) {
         test_data_t *tbefore, *tafter, *tptr;
     
 
-        // This will test tree rotation on data inertion and deletion.
+        // This will test tree rotation on data insertion and deletion.
         // To avoid coming up with data, we use add_test_data() to populate pool1 and
-        // selectivly morve records to pool2 (and back) in designed order to trigger the 
+        // selectively move records to pool2 (and back) in designed order to trigger the 
         // conditions we aim to test. NOTE: inserting and deleting a data record from a 
         // tree does not destroy the data record (when using rdb_delete() and rdb_insert(). 
         //
@@ -849,7 +851,7 @@ int main(int argc, char *argv[]) {
         register_pools();
         pool4 = rdb_register_um_pool("test_pool_4", 
                             1, 
-                            0, // offset if first index. usually it's zero
+                            0, // offset of first index. usually it's zero
                             RDB_KSTR | RDB_KASC | RDB_BTREE,
                             NULL);
         if (pool4 == NULL) return -1;
@@ -865,16 +867,12 @@ int main(int argc, char *argv[]) {
 //        info ("%s\n", NULL == (ptd=rdb_delete_const(pool1,2, 4)) ? "FAIL" : ptd->string );
 //        info ("%s\n", NULL == (ptd=rdb_delete_const(pool1,2, 4)) ? "FAIL" : ptd->string );
 //        info ("%s\n", NULL == (ptd=rdb_delete_const(pool1,2, 9)) ? "FAIL" : ptd->string );
-      printf("0--------------------------0\n");
         rdb_iterate(pool4,dump,(void *) &my_dump_one_clean, NULL, NULL, NULL);
         info("%s\n",""); 
-      printf("0--------------------------0\n");
         rdb_iterate(pool4,dump,(void *) &my_dump_one_drop_2, NULL, NULL, NULL);
         info("%s\n","");
-      printf("0--------------------------0\n");
         rdb_iterate(pool4,dump,(void *) &my_dump_one_stop_at_5, NULL, NULL, NULL);
         info("%s\n","");
-      printf("0--------------------------0\n");
 
         rdb_insert (pool2, rdb_delete_const (pool1, 2, 8));
         rdb_move_const (pool2, pool1, 2, 10);
@@ -910,9 +908,17 @@ int main(int argc, char *argv[]) {
         
         del_idx = 0;
         tbefore = tafter = NULL;
-        if (NULL == (tptr = rdb_get_neigh(pool1, 2, &del_idx, &tbefore, &tafter)) && (NULL != tbefore) && (NULL  != tafter)) {
+        if (NULL == (tptr = rdb_get_neigh(pool1, 2, &del_idx, &tbefore, &tafter)) && ((NULL != tbefore) || (NULL  != tafter))) {
             info("Neigh Get - miss OK\n");
-            info ("search %d b %hhu a %hhu\n", del_idx, tbefore->ui8, tafter->ui8);
+            if (tbefore && tafter) {
+                debug ("search %d b %hhu a %hhu\n", del_idx, tbefore->ui8, tafter->ui8);
+            }
+            else if (tafter) {
+                debug ("search %d b --- a %hhu\n", del_idx, tafter->ui8);
+            }
+            else {
+                debug ("search %d b %hhu a ---\n", del_idx, tbefore->ui8);
+            }
         } else {
             info("Neigh Get - miss Fail %p %p %p (hhu)\n",tptr ,tbefore, tafter);
             info ("search %d b hhu a %hhu\n", del_idx, /*tbefore->ui8*/ tafter->ui8);

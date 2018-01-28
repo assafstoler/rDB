@@ -20,6 +20,7 @@
  *   used by other kernel modules.
  *
  */
+//#define DEBUG
 
 #ifdef KM
 // Build a Kernel Module
@@ -88,7 +89,6 @@ char      *rdb_error_string = NULL;
 int     levels,
         maxLevels;
 
-//#define DEBUG
 
 
 #ifdef KM
@@ -263,7 +263,7 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
 void rdb_drop_pool (rdb_pool_t *pool) {
     rdb_pool_t *prev, *next;
 
-    if (pool && pool->name) info("dropping %s\n", pool->name);
+    if (pool && pool->name); // info("dropping %s\n", pool->name);
     else return;
 
     next=pool->next;
@@ -286,7 +286,7 @@ void rdb_drop_pool (rdb_pool_t *pool) {
     }
 
     if (pool->name) {
-        info ("freeing %s\n", pool->name);
+        //info ("freeing %s\n", pool->name);
         rdb_free (pool->name);
     }
 
@@ -1403,13 +1403,13 @@ int _rdb_iterate (
     int     rc3 = 0;
     int     indexCount;
 
-
     if (pool->FLAGS[index] & RDB_BTREE) {
         set_pointers (pool, index, start, &pp, &dataHead);
 
         if (*resumePtr != NULL) {
+            debug ("0->Resumeing\n");
             if ((rc3 = pool->fn[index] (dataHead + pool->key_offset[index],
-                            (void *) resumePtr + pool->key_offset[index])) < 0) {
+                            (void *) *resumePtr + (sizeof (PP_T) * index) + pool->key_offset[index])) < 0) {
                 debug("1->left(i=%d)\n",index);
                 if ( 1 == ( 1 & (rc =  _rdb_iterate (pool, index, fn, data,
                                     del_fn, delfn_data, pp->left, start, RDB_TREE_LEFT,
@@ -1421,7 +1421,7 @@ int _rdb_iterate (
                 }
                 else if ( rc & RDBFE_NODE_FIND_NEXT ) {
                     *resumePtr = dataHead;
-                    return rc - 6 ; //(leave abort status in if exist)
+                    return rc - 8 ; //(leave abort status in if exist)
                 }
                 else if (rc > 1) return rc;
             }
@@ -1437,13 +1437,16 @@ int _rdb_iterate (
                 }
                 else if ( rc & RDBFE_NODE_FIND_NEXT ) {
                     *resumePtr = dataHead;
-                    return rc - 6 ; //
+                    return rc - 8 ; //
                 }
                 else if (rc > 1) return rc;
             }
         }
 
-        if (*resumePtr != NULL &&  (dataHead == *resumePtr)) *resumePtr = NULL; 
+        if (*resumePtr != NULL &&  (dataHead == *resumePtr)) {
+            *resumePtr = NULL; 
+            debug ("redume work\n");
+        }
                        // time to start working again
 
         if (*resumePtr == NULL) {
@@ -1522,12 +1525,13 @@ int _rdb_iterate (
                     if (dataHead) rdb_free (dataHead);
                 }
 
+                debug ("after delete rc=%d\n", rc);
                 return rc;
             }
         }
 
         if (pp->right != NULL) {
-            debug("(3)->right\n");
+            debug("(3)->right start %p resumePtr %p\n",start, *resumePtr);
             if (1 == (1 & (rc = _rdb_iterate(pool, index, fn, data, del_fn, 
                     delfn_data, pp->right, start, RDB_TREE_RIGHT, 
                                                             resumePtr)))) {
@@ -1629,7 +1633,7 @@ rfeStart:
 }
 
 /* rdb_iterate scans the data pool, in order, by index, calling fn() on each node
- * thsy is not null.
+ * that is not null.
  * If fn returns RDB_DB_DELETE_NODE, or if fn is null, the tree node will be 
  * deleted from rDB and del_fn will be called to do it's thing (if not NULL).
  *
@@ -1680,9 +1684,11 @@ void rdb_iterate(
             rc = _rdb_iterate_list (pool, index, fn, fn_data, del_fn, del_data,
                                 pool->root[index], NULL, 0, &resumePtr);
         }
-	    debug("rc=%d %p\n",rc, resumePtr);
+	    debug("rc=**%d %p\n",rc, resumePtr);
     } while (rc != 0 && ( rc & RDBFE_ABORT ) != RDBFE_ABORT && 
                                                     resumePtr != NULL);
+    debug("rc = %d\n", rc);
+    debug("rcp = %p\n", resumePtr);
 }
 
 void _rdb_flush( 
