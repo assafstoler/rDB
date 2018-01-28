@@ -874,6 +874,21 @@ int main(int argc, char *argv[]) {
         rdb_iterate(pool4,dump,(void *) &my_dump_one_stop_at_5, NULL, NULL, NULL);
         info("%s\n","");
 
+        // FIFO tests
+        rdb_iterate(pool1,13,(void *) &my_dump_clean, NULL, NULL, NULL);
+        info("%s\n","");
+        rdb_delete (pool1, 13, NULL);
+        rdb_delete (pool1, 14, NULL);
+        rdb_iterate(pool1,14,(void *) &my_dump_clean, NULL, NULL, NULL);
+        info("%s\n","");
+        rdb_iterate(pool1,14,(void *) &my_dump_drop_2, NULL, NULL, NULL);
+        info("%s\n","");
+        rdb_iterate(pool1,13,(void *) &my_dump_clean, NULL, NULL, NULL);
+        info("%s\n","");
+        //rdb_dump(pool1, 13, ",");
+        rdb_dump(pool1, 2, ",");
+        info("%s\n","");
+
         rdb_insert (pool2, rdb_delete_const (pool1, 2, 8));
         rdb_move_const (pool2, pool1, 2, 10);
         del_idx = 4;

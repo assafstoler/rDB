@@ -92,7 +92,7 @@ set_tests_properties (rdb_test_data_get
 
 add_test (rdb_test_data_move rdb_test -t5)
 set_tests_properties (rdb_test_data_move
-    PROPERTIES PASS_REGULAR_EXPRESSION "^0,8,4,12,2,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,\nGet OK\nNULL Get OK\nNeigh Get - hit OK\nNeigh Get - miss OK\n1,2,3,5,6,7,9,11,13,14,15,\n4.8.10.\n\nlock 0\nunlock\n$")
+    PROPERTIES PASS_REGULAR_EXPRESSION "^0,8,4,12,2,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,\n0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n14,13,12,11,10,9,8,7,6,5,4,3,2,1,\n14,13,12,11,10,9,8,7,6,5,4,3,1,\n1,3,4,5,6,7,8,9,10,11,12,13,14,\n1,3,4,5,6,7,8,9,10,11,12,13,14,\nGet OK\nNULL Get OK\nNeigh Get - hit OK\nNeigh Get - miss OK\n1,3,5,6,7,9,11,13,14,\n4.8.10.\n\nlock 0\nunlock\n$")
 
 add_test (rdb_test_registra rdb_test -t6)
 set_tests_properties (rdb_test_registra

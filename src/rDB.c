@@ -1409,7 +1409,7 @@ int _rdb_iterate (
         if (*resumePtr != NULL) {
             debug ("0->Resumeing\n");
             if ((rc3 = pool->fn[index] (dataHead + pool->key_offset[index],
-                            (void *) *resumePtr + (sizeof (PP_T) * index) + pool->key_offset[index])) < 0) {
+                            (void *) *resumePtr /*+ (sizeof (PP_T) * pool->indexCount)*/ + pool->key_offset[index])) < 0) {
                 debug("1->left(i=%d)\n",index);
                 if ( 1 == ( 1 & (rc =  _rdb_iterate (pool, index, fn, data,
                                     del_fn, delfn_data, pp->left, start, RDB_TREE_LEFT,
