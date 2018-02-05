@@ -748,6 +748,7 @@ int main(int argc, char *argv[]) {
         
         // insert 16 records, print via index
 
+
         rdb_init();
         register_pools();
         if (-1 == add_test_data(pool1,loops))
@@ -830,6 +831,7 @@ int main(int argc, char *argv[]) {
         rdb_clean(0);
 
     } else if (test == 5) {
+        int rc;
 
         dump = 0;
 
@@ -885,11 +887,35 @@ int main(int argc, char *argv[]) {
         info("%s\n","");
         rdb_iterate(pool1,13,(void *) &my_dump_clean, NULL, NULL, NULL);
         info("%s\n","");
-        //rdb_dump(pool1, 13, ",");
+
         rdb_dump(pool1, 2, ",");
         info("%s\n","");
 
-        rdb_insert (pool2, rdb_delete_const (pool1, 2, 8));
+        // To test failed insert due to mixed index....
+        // add '8' record to pool2
+        rc = rdb_insert (pool2, rdb_get_const (pool1, 2, 8));
+        printf("insert return = %d\n", rc);
+        info ("dump pool2 :");
+        rdb_iterate(pool2,1,(void *) &my_dump_clean, NULL, NULL, NULL);
+        info ("\n");
+
+        // delete first two idx's
+        rdb_delete_one (pool2, 0, rdb_get_const (pool2, 2, 8));
+
+        // try Adding same... 
+        rc = rdb_insert (pool2, rdb_delete_const (pool1, 2, 8));
+        printf("re-insert return = %d\n", rc);
+        info ("dump pool2 :");
+        rdb_iterate(pool2,0,(void *) &my_dump_clean, NULL, NULL, NULL);
+        info ("\n");
+       
+        // here we re-insert the deleted index to 'fix' the damaged pool 
+        rdb_insert_one (pool2, 0, rdb_get_const (pool2, 2, 8));
+        info ("dump pool2 :");
+        rdb_iterate(pool2,0,(void *) &my_dump_clean, NULL, NULL, NULL);
+        info ("\n");
+        // end of partial insert test case
+
         rdb_move_const (pool2, pool1, 2, 10);
         del_idx = 4;
         rdb_move (pool2, pool1, 2, &del_idx);
@@ -936,7 +962,7 @@ int main(int argc, char *argv[]) {
             }
         } else {
             info("Neigh Get - miss Fail %p %p %p (hhu)\n",tptr ,tbefore, tafter);
-            info ("search %d b hhu a %hhu\n", del_idx, /*tbefore->ui8*/ tafter->ui8);
+            if (tafter) info ("search %d b hhu a %hhu\n", del_idx, /*tbefore->ui8*/ tafter->ui8);
         }
 
         rdb_dump(pool1, 2, ",");

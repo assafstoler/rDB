@@ -1129,6 +1129,21 @@ int _rdb_insert (
     return -1;                          // we found no mechanizm to add node
 }
 
+inline int _rdb_delete_by_pointer (
+        rdb_pool_t  *pool, 
+        void        *parent, 
+        int         index,
+        PP_T        *ppkDead,
+        int         side);
+
+int _rdb_delete (
+        rdb_pool_t  *pool, 
+        int         lookupIndex, 
+        void        *data, 
+        void        *start, 
+        PP_T        *parent,
+        int         side);
+
 // Return shoud be the # of updated indexes, which must match the number of 
 // defined indexes, anything less shows an error and should be treated as 
 // such by user.
@@ -1137,13 +1152,36 @@ int _rdb_insert (
 
 int rdb_insert (rdb_pool_t *pool, void *data)
 {
-    int     indexCount;
+    int     indexCount, ic2, last_success = -1;
     int     rc = 0;
   
     if (data != NULL) {
-        for (indexCount = 0; indexCount < pool->indexCount; indexCount++)
+        for (indexCount = 0; indexCount < pool->indexCount; indexCount++) {
             (_rdb_insert (pool, data, pool->root[indexCount], 
                 indexCount, NULL, 0) < 0) ? rc : rc++;
+            //printf("%d %d\n", rc, indexCount);
+
+            if ( rc <= indexCount ) {
+                //TODO: NOW!: finish partial delete
+                if (last_success >= 0) { // we failed to insert, we have what to undo
+                    //printf("RECOVERY\n");
+                    rc = 0;
+                    for (ic2 = 0; ic2 <= last_success; ic2++ ) {
+                        //printf("RECOVERY %d\n", ic2);
+                        (_rdb_delete (pool, ic2, data, NULL, NULL, 0) < 0) ? rc : rc++;
+                    }
+                    if (rc != ic2 + 1) {
+                        //not able to delete what we just inserted? Lock missed?
+                        rdb_error_value(-1, "rdb_insert failed. Insert UNDO failed. LOCK ERROR?");
+                    } 
+                    rc = 0; // to ensure counter will not go up
+                }
+                break;
+            }
+            else {
+                last_success = indexCount;
+            }
+        }
 #ifdef RDB_POOL_COUNTERS
         if (rc > 0) pool->record_count++;
 #endif
@@ -1362,20 +1400,6 @@ void   *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, voi
     return _rdb_get_neigh (pool, idx, data, NULL, 0, before, after);
 }
 
-inline int _rdb_delete_by_pointer (
-        rdb_pool_t  *pool, 
-        void        *parent, 
-        int         index,
-        PP_T        *ppkDead,
-        int         side);
-
-int _rdb_delete (
-        rdb_pool_t  *pool, 
-        int         lookupIndex, 
-        void        *data, 
-        void        *start, 
-        PP_T        *parent,
-        int         side);
 
 // Internal usage
 #define RDBFE_NODE_DELETED 1
@@ -1508,6 +1532,9 @@ int _rdb_iterate (
                     debug ("rdb_iterate: Delete # %d\n", indexCount);
                     _rdb_delete (pool, indexCount, dataHead, NULL, NULL, 0);
                 }
+#ifdef RDB_POOL_COUNTERS
+                pool->record_count--;
+#endif
 
                 if (del_fn) del_fn(dataHead, delfn_data);
                 else { 
@@ -1604,6 +1631,9 @@ rfeStart:
                 debug ("rdb_iterate: Delete # %d\n", indexCount);
                 _rdb_delete (pool, indexCount, dataHead, NULL, NULL, 0);
             }
+#ifdef RDB_POOL_COUNTERS
+            pool->record_count--;
+#endif
 
             if (del_fn) del_fn(dataHead, delfn_data);
             else { 
