@@ -317,8 +317,8 @@ static void *timer_thread(union sigval *p)
             t_info[id].id,
             t_info[id].counter++);
 
-        if (t_info[id].counter>=1000) {
-            t_info[id].counter=0;
+        if (t_info[id].counter >= t_info[id].hz) {
+            t_info[id].counter -= t_info[id].hz ;
         }
     }
 
