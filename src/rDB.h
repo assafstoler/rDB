@@ -256,6 +256,7 @@ void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx,
 void       *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data);
 void        rdb_drop_pool (rdb_pool_t *pool);
 void        rdb_print_pools(void *fp);
+char       *rdb_print_pool_stats (char *buf, int max_len);
 
 //void        _rdb_dump (rdb_pool_t *, int index, void *start);
 void        rdb_dump (rdb_pool_t *pool, int index, char *separator);

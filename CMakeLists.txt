@@ -22,6 +22,8 @@ else  (${USE_128_BIT_TYPES})
  MESSAGE("NOT Using native 128 bit types")
 endif (${USE_128_BIT_TYPES})
 
+#ADD_DEFINITIONS(-DRDB_POOL_COUNTERS)
+
 add_subdirectory(demo)
 add_subdirectory(rdbfw)
 add_subdirectory(test)

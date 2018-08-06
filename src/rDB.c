@@ -187,6 +187,37 @@ rdb_pool_t *rdb_find_pool_by_name (char *poolName)
 
     return (NULL);
 }
+// Print pool usage report
+char * rdb_print_pool_stats (char *buf, int max_len)
+{
+    int used=0;
+    
+#ifdef RDB_POOL_COUNTERS
+    rdb_pool_t *pool;
+    int rc;
+
+    if (pool_root != NULL) {
+        pool = pool_root;
+
+        while (pool != NULL) {
+            rc = snprintf(buf + used, max_len - used, "Pool: %s : %d\n",
+                    pool->name, pool->record_count );
+            if ( rc > 0 ) {
+                used += rc;
+            } 
+            else {
+                break;
+            }
+
+            pool = pool->next;
+        }
+    }
+    snprintf(buf + used, max_len - used, ":END:");
+#else
+    snprintf(buf + used, max_len - used, "rDB pool record counting disabled");
+#endif
+    return (buf);
+}
 // rDB Internal. this will set the various compate functions for the rDB
 // data maganment routines.
 int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
