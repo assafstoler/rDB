@@ -463,6 +463,7 @@ int emit_cb (void *data, void *user_ptr) {
         else {
             //TODO: Alloc!!!
             log (LOG_ERROR, "out of memory sending %d to %s. message discarded\n",msg->id, ctx->name);
+            q = NULL; // ensure we don't free a random pointer
             goto emit_err;
         }
 
