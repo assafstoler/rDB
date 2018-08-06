@@ -321,7 +321,10 @@ void rdb_drop_pool (rdb_pool_t *pool) {
         rdb_free (pool->name);
     }
 
-    if (pool) rdb_free(pool) ;
+    if (pool) {
+        rdb_free(pool) ;
+        pool = NULL;
+    }
 
     return;
 }
