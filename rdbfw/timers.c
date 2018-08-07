@@ -41,6 +41,7 @@
 #include "rDB.h"
 #include "messaging.h"
 #include "rdbfw.h"
+#include "utils.h"
 #include "log.h"
 
 #define MAX_TIMERS 16
@@ -286,22 +287,47 @@ static void *timer_thread(void *p)
 {
     t_info_t *t_info;
     t_info = p;
-    log (LOG_INFO, "Starting timer thread @ %dHz\n",t_info->hz);
-    
-    struct timeval tv;
+    struct timespec tv, tnext, tnow;
     int rc;
+    int64_t sleep_time = 0;
+    
+    log (LOG_INFO, "Starting timer thread @ %dHz\n",t_info->hz);
+
+    clock_gettime(CLOCK_REALTIME, &tnext);
+
     while (!break_requested) {
-        if (t_info->hz == 1) {
-            tv.tv_sec=1;
-            tv.tv_usec= 0;
-        } else {
-            tv.tv_sec=0;
-            tv.tv_usec = 1000000/t_info->hz;
+        clock_gettime(CLOCK_REALTIME, &tnow);
+        tnext.tv_nsec += 1000000000 / t_info->hz;
+        if (tnext.tv_nsec >= 1000000000) {
+            tnext.tv_nsec -= 1000000000;
+            tnext.tv_nsec += 1000000000 % t_info->hz; // avoid drift
+            log (LOG_DEBUG, "drift avoidance %ld\n", 1000000000L % t_info->hz);
+            tnext.tv_sec++;
         }
-        // portable, simple way to wait for timer. 
-        rc=select(0, NULL, NULL, NULL, &tv);
-        if (rc != 0) {
-            log (LOG_DEBUG, "rc = %d during select. Sperious timer may occured\n", rc);
+
+        sleep_time = s_ts_diff_time_ns(&tnow, &tnext, NULL);
+        if (sleep_time <= -10000000000) { //over 10 seconds late - assume clock-drift.
+            clock_gettime(CLOCK_REALTIME, &tnext); // 'resetting' timer
+            log (LOG_INFO, "TIMERS Reset after long sleep\n");
+        }
+
+        tv.tv_sec = 0;
+        tv.tv_nsec = s_ts_diff_time_ns(&tnow, &tnext, NULL);
+        if (tv.tv_nsec < 0) { 
+            // we aer late, no delay needed
+            log (LOG_WARN, "Timer late - skipping sleep\n");
+        }
+        else {
+            log (LOG_TRACE, "Timer sleep %ld\n", tv.tv_nsec);
+            while (tv.tv_nsec >= 1000000000) {
+                tv.tv_nsec -= 1000000000;
+                tv.tv_sec ++;
+            }
+            // portable, simple way to wait for timer. 
+            rc=pselect(0, NULL, NULL, NULL, &tv,NULL);
+            if (rc != 0) {
+                log (LOG_DEBUG, "rc = %d during select. Sperious timer may occured\n", rc);
+            }
         }
         // we do NOT want to emit if we are canceled 
         pthread_testcancel();
