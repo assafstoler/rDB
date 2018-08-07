@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <pthread.h>
+#include <time.h>
 #include <dlfcn.h>
 #include <errno.h>
 
