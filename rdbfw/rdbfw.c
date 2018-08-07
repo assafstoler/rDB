@@ -25,6 +25,8 @@
 #define PLUGINS_SUFFIX "_rdbfw_fns"
 
 uint32_t log_level = LOG_INFO;
+pthread_mutex_t  log_mutex;
+
 static int automated_test  = 0;
 static int break_requested = 0;
 
@@ -54,19 +56,19 @@ static int load_plugin_cb (void *data, void *user_ptr) {
     
     if (!p || !p->name || !p->pathname) {
         if (p && p->name) {
-            log (LOG_ERROR, "failed to load plugin %s\n", p->name);
+            fwlog (LOG_ERROR, "failed to load plugin %s\n", p->name);
             goto load_plugin_cb_err;
         } else if (p && p->pathname) {
-            log (LOG_ERROR, "failed to load plugin %s\n", p->pathname);
+            fwlog (LOG_ERROR, "failed to load plugin %s\n", p->pathname);
             goto load_plugin_cb_err;
         } else {
-            log (LOG_ERROR, "failed to load plugin\n");
+            fwlog (LOG_ERROR, "failed to load plugin\n");
             goto load_plugin_cb_err;
         }
     }
     
     if (p->state != RDBFW_STATE_NULL) {
-        log (LOG_ERROR, "called while plugin %s is loaded", p->name);
+        fwlog (LOG_ERROR, "called while plugin %s is loaded", p->name);
         return RDB_CB_OK;
     }
 
@@ -77,13 +79,13 @@ static int load_plugin_cb (void *data, void *user_ptr) {
     p->handle = dlopen (p->pathname , RTLD_NOW| RTLD_LOCAL);
 #endif
     if (p->handle == NULL) {
-        log (LOG_ERROR, "failed to load plugin %s - %s\n", p->pathname, dlerror());
+        fwlog (LOG_ERROR, "failed to load plugin %s - %s\n", p->pathname, dlerror());
         goto load_plugin_cb_err;
     }
     
     buf = malloc (strlen(p->name) + strlen(PLUGINS_SUFFIX) + 1);
     if (buf == NULL) {
-        log (LOG_ERROR, "malloc error\n");
+        fwlog (LOG_ERROR, "malloc error\n");
         goto load_plugin_cb_err;
     }
 
@@ -92,7 +94,7 @@ static int load_plugin_cb (void *data, void *user_ptr) {
 
     p->plugin_info = (rdbfw_plugin_api_t *) dlsym(p->handle, buf); 
     if ((p->error = dlerror()) != NULL)  {
-        log (LOG_ERROR, "failed dlsym() : %s\n", p->error);
+        fwlog (LOG_ERROR, "failed dlsym() : %s\n", p->error);
         free(buf);
         goto load_plugin_cb_err;
     }
@@ -100,7 +102,7 @@ static int load_plugin_cb (void *data, void *user_ptr) {
     free(buf);
 
     p->state = RDBFW_STATE_LOADED;
-    log (LOG_INFO, "Loaded %s\n", p->name);
+    fwlog (LOG_INFO, "Loaded %s\n", p->name);
    
     return RDB_CB_OK;
 
@@ -118,7 +120,7 @@ static int drop_plugin_cb (void *data, void *user_ptr){
 
     if (p->handle) {
         rc = dlclose(p->handle);
-        log (LOG_DEBUG, "dlclose(%s) %d\n", p->name, rc);
+        fwlog (LOG_DEBUG, "dlclose(%s) %d\n", p->name, rc);
     }
 
     p->state = RDBFW_STATE_NULL;
@@ -151,7 +153,7 @@ static int de_init_plugin_cb (void *data, void *user_ptr) {
         return RDB_CB_OK;
     } 
     else {
-        log (LOG_ERROR, "%s NOT stopped during plugin de_init. state = %d\n", p->name, p->state);
+        fwlog (LOG_ERROR, "%s NOT stopped during plugin de_init. state = %d\n", p->name, p->state);
     }
 
     return RDB_CB_OK;
@@ -170,7 +172,7 @@ static int init_plugin_cb (void *data, void *user_ptr) {
         while (p->state != RDBFW_STATE_INITILIZED) {
             usleep(0);
         }
-        log (LOG_INFO, "%s\n", p->name);
+        fwlog (LOG_INFO, "%s\n", p->name);
         return RDB_CB_OK;
     }
 
@@ -187,7 +189,7 @@ static int start_plugin_cb (void *data, void *user_ptr) {
                 p->state != RDBFW_STATE_STOPALL) {
             usleep(0);
         }
-        log (LOG_INFO, "%s\n", p->name);
+        fwlog (LOG_INFO, "%s\n", p->name);
         return RDB_CB_OK;
     }
 
@@ -205,7 +207,7 @@ static int stop_timers_plugin_cb (void *data, void *user_ptr) {
         if (strstr(p->name, "timers") == NULL) {
            return RDB_CB_OK;
         } 
-        log (LOG_INFO, "stopping %s\n", p->name);
+        fwlog (LOG_INFO, "stopping %s\n", p->name);
         //p->state = RDBFW_STATE_STOPPING;
         if ((*p->plugin_info).stop)  (*p->plugin_info).stop(p);
         pthread_mutex_lock(&p->msg_mutex);
@@ -214,11 +216,11 @@ static int stop_timers_plugin_cb (void *data, void *user_ptr) {
         while (p->state != RDBFW_STATE_STOPPED) {
             usleep(0);
         }
-        log (LOG_INFO, "%s\n", p->name);
+        fwlog (LOG_INFO, "%s\n", p->name);
         return RDB_CB_OK;
     } 
     else {
-        log (LOG_DEBUG, "NOT stopping %s as it's not in running state\n", p->name);
+        fwlog (LOG_DEBUG, "NOT stopping %s as it's not in running state\n", p->name);
     }
     return RDB_CB_OK;
 }
@@ -232,7 +234,7 @@ static int stop_plugin_cb (void *data, void *user_ptr) {
         if (strstr(p->name, "timers") != NULL) {
            return RDB_CB_OK;
         } 
-        log (LOG_INFO, "stopping %s\n", p->name);
+        fwlog (LOG_INFO, "stopping %s\n", p->name);
         //p->state = RDBFW_STATE_STOPPING;
         if ((*p->plugin_info).stop)  (*p->plugin_info).stop(p);
         pthread_mutex_lock(&p->msg_mutex);
@@ -241,11 +243,11 @@ static int stop_plugin_cb (void *data, void *user_ptr) {
         while (p->state != RDBFW_STATE_STOPPED) {
             usleep(0);
         }
-        log (LOG_INFO, "%s\n", p->name);
+        fwlog (LOG_INFO, "%s\n", p->name);
         return RDB_CB_OK;
     }
     else {
-        log (LOG_DEBUG, "NOT stopping %s\n", p->name);
+        fwlog (LOG_DEBUG, "NOT stopping %s\n", p->name);
     }
     return RDB_CB_OK;
 }
@@ -255,7 +257,7 @@ static int stop_plugin_cb (void *data, void *user_ptr) {
 static int display_run_state_cb(void *data, void *user_ptr) {
     plugins_t *p;
     p = (plugins_t *) data;
-    log (LOG_INFO, "%s %d\n",p->name,p->state);
+    fwlog (LOG_INFO, "%s %d\n",p->name,p->state);
     return RDB_CB_OK;
 }
 static int any_running_cb (void *data, void *user_ptr) {
@@ -293,9 +295,9 @@ static int print_counters_cb (void *data, void *user_ptr) {
     plugins_t *p;
     p = (plugins_t *) data;
     
-    log (LOG_INFO, "%s totals\n", p->name);
-    log (LOG_INFO, "rx_count=%" PRIu64 " - " ,p->msg_rx_count);
-    log (LOG_INFO, "wake_count=%" PRIu64 "\n" ,p->wakeup_count);
+    fwlog (LOG_INFO, "%s totals\n", p->name);
+    fwlog (LOG_INFO, "rx_count=%" PRIu64 " - " ,p->msg_rx_count);
+    fwlog (LOG_INFO, "wake_count=%" PRIu64 "\n" ,p->wakeup_count);
     return RDB_CB_OK;
 }
 
@@ -381,14 +383,14 @@ static int register_plugin(char *name, rdb_pool_t *plugin_pool, plugins_t *plugi
     for (i = 0; i < msg_slots; i++) {
         q = calloc (1,sizeof (rdbmsg_queue_t));
         if (q == NULL) {
-            log (LOG_ERROR,
+            fwlog (LOG_ERROR,
                     "Unable to allocate all requested messaages for %s. (req: %d, available %d)\n",
                     plugin_node->name, msg_slots, i);
             break;
         }
         
         if (0 == rdb_insert(plugin_node->empty_msg_store, q)) {
-            log (LOG_ERROR,
+            fwlog (LOG_ERROR,
                     "Failed to insert msg_buffer into data pool for plugin %s. Discarding\n",
                     plugin_node->name);
             free (q);
@@ -399,7 +401,7 @@ static int register_plugin(char *name, rdb_pool_t *plugin_pool, plugins_t *plugi
     plugin_node->msg_dispatch_root  = rdb_register_um_pool ( buf,
                         1, 0, RDB_KUINT32 | RDB_KASC | RDB_BTREE, NULL ); 
     if (0 == rdb_insert(plugin_pool, plugin_node)) {
-        log (LOG_ERROR, 
+        fwlog (LOG_ERROR, 
                 "Failed to insert %s to plugin_pool. this plugin will NOT function\n",
                 buf);
         if (plugin_node->msg_dispatch_root != NULL) {
@@ -419,7 +421,7 @@ register_plugin_err:
     return -1;
 }
 static void sig_func(int sig) {
-    log (LOG_WARN, "Caught signal %d\n", sig);
+    fwlog (LOG_WARN, "Caught signal %d\n", sig);
     break_requested = 1;
 }
 
@@ -493,13 +495,13 @@ int main(int argc, char *argv[])
     
     // Register plugins
     if (-1 == register_plugin("hw_timers", plugin_pool, plugin_node, 100)) {
-        log (LOG_ERROR, "Failed to regusted plugin. Aborting\n");
+        fwlog (LOG_ERROR, "Failed to regusted plugin. Aborting\n");
         handle_fatal_error();
     }
 
     //register_plugin("timers", plugin_pool, plugin_node);
     if (-1 == register_plugin("event_skeleton", plugin_pool, plugin_node, 500)) {
-        log (LOG_ERROR, "Failed to regusted plugin. Aborting\n");
+        fwlog (LOG_ERROR, "Failed to regusted plugin. Aborting\n");
         handle_fatal_error();
     }
     //register_plugin("skeleton", plugin_pool, plugin_node);
@@ -529,10 +531,11 @@ int main(int argc, char *argv[])
                  usleep(30000);
             }
 
-            log (LOG_INFO, "SHOTDOWN started\n");
+            fwlog (LOG_INFO, "SHOTDOWN started\n");
             rdb_iterate(plugin_pool,  0, stop_timers_plugin_cb, NULL, NULL, NULL); 
+            fwlog (LOG_INFO, "Timers halted\n");
             rdb_iterate(plugin_pool,  0, stop_plugin_cb, NULL, NULL, NULL); 
-            log (LOG_INFO, "Stopall complete.\n");
+            fwlog (LOG_INFO, "Stopall complete.\n");
             rdb_iterate(plugin_pool,  0, display_run_state_cb, NULL, NULL, NULL); 
             break;
         } else {
@@ -545,10 +548,10 @@ int main(int argc, char *argv[])
     rc = clock_gettime(CLOCK_REALTIME, &time_end);
 
     if (rc) {
-        log (LOG_ERROR, "Error: Failed to get clock\n");
+        fwlog (LOG_ERROR, "Error: Failed to get clock\n");
     } else {
         diff_time_ns(&time_start, &time_end, &delta_time);
-        log (LOG_ERROR, "uptime: "); 
+        fwlog (LOG_ERROR, "uptime: "); 
         print_time(&delta_time);
     }
         

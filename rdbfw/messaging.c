@@ -9,6 +9,7 @@
 
 #include "rDB.h"
 #include "messaging.h"
+#include "utils.h"
 #include "rdbfw.h"
 #include "log.h"
 
@@ -38,7 +39,7 @@ int rdbmsg_request(void  *ctx, int from, int to, int group, int id){
     rdbmsg_dispatch_t    *d;
     // TODO set and protect max buf correctly!
     char buf[80];
-    /*log (LOG_DEBUG, "%s ... in progress %d %d %d %d\n",
+    /*fwlog (LOG_DEBUG, "%s ... in progress %d %d %d %d\n",
             ((plugins_t *)(ctx))->name, from, to, group, id);
    */
     //TODO: once working,make this into a fn() 
@@ -54,7 +55,7 @@ int rdbmsg_request(void  *ctx, int from, int to, int group, int id){
         rc = rdb_insert(p, d);
         if (rc != 1) {
             rc = 1;
-            log (LOG_ERROR, "failed to insert rdb_request (1)\n");
+            fwlog (LOG_ERROR, "failed to insert rdb_request (1)\n");
             goto rdbmsg_request_out;
         } else rc=0;
     }
@@ -64,7 +65,7 @@ int rdbmsg_request(void  *ctx, int from, int to, int group, int id){
         d->next  = rdb_register_um_pool ( buf,
                             1, 0, RDB_KUINT32 | RDB_KASC | RDB_BTREE, NULL ); 
         if (d->next == NULL) {
-            //log(LOG_ERROR, "unable to register tree %s.%d\n", ((plugins_t *)(ctx))->name, from);
+            fwlog(LOG_ERROR, "unable to register tree %s.%d\n", ((plugins_t *)(ctx))->name, from);
             //TODO exit() or other more orderly shutdown?
             exit(1);
         }
@@ -79,7 +80,7 @@ int rdbmsg_request(void  *ctx, int from, int to, int group, int id){
         rc = rdb_insert(p, d);
         if (rc != 1) {
             rc = 1;
-            log (LOG_ERROR, "failed to insert rdb_request (2)\n");
+            fwlog (LOG_ERROR, "failed to insert rdb_request (2)\n");
             goto rdbmsg_request_out;
         } else rc=0;
     }
@@ -89,7 +90,7 @@ int rdbmsg_request(void  *ctx, int from, int to, int group, int id){
         d->next  = rdb_register_um_pool ( buf,
                             1, 0, RDB_KUINT32 | RDB_KASC | RDB_BTREE, NULL ); 
         if (d->next == NULL) {
-            //log (LOG_ERROR, "unable to register tree %s.%d.%d\n",
+            //fwlog (LOG_ERROR, "unable to register tree %s.%d.%d\n",
              //       ((plugins_t *)(ctx))->name, from, to);
             //TODO exit() or other more orderly shutdown?
             exit(1);
@@ -105,7 +106,7 @@ int rdbmsg_request(void  *ctx, int from, int to, int group, int id){
         rc = rdb_insert(p, d);
         if (rc != 1) {
             rc = 1;
-            log (LOG_ERROR, "failed to insert rdb_request (3)\n");
+            fwlog (LOG_ERROR, "failed to insert rdb_request (3)\n");
             goto rdbmsg_request_out;
         } else rc=0;
     }
@@ -115,7 +116,7 @@ int rdbmsg_request(void  *ctx, int from, int to, int group, int id){
         d->next  = rdb_register_um_pool ( buf,
                             1, 0, RDB_KUINT32 | RDB_KASC | RDB_BTREE, NULL ); 
         if (d->next == NULL) {
-            log (LOG_ERROR, "unable to register tree %s.%d.%d.%d\n", ((plugins_t *)(ctx))->name, from, to, group);
+            fwlog (LOG_ERROR, "unable to register tree %s.%d.%d.%d\n", ((plugins_t *)(ctx))->name, from, to, group);
             //TODO exit() or other more orderly shutdown?
             exit(1);
         }
@@ -130,13 +131,13 @@ int rdbmsg_request(void  *ctx, int from, int to, int group, int id){
         rc = rdb_insert(p, d);
         if (rc != 1) {
             rc = 1;
-            log (LOG_ERROR, "failed to insert rdb_request (4)\n");
+            fwlog (LOG_ERROR, "failed to insert rdb_request (4)\n");
             goto rdbmsg_request_out;
         } else rc=0;
     }
 
 
-    //log (LOG_DEBUG, "%s: request registered %d %d\n", p->name, id, rc);
+    fwlog (LOG_DEBUG, "%s: request registered %d %d\n", p->name, id, rc);
 
 
 rdbmsg_request_out:
@@ -187,7 +188,7 @@ void check_if_subscribed (void *data, void *user_ptr, int stage) {
     // in debugging context.
     assert (stage >= 0 && (stage < 4));
      
-    log (LOG_TRACE, "check: s %d\n", stage);
+    //fwlog (LOG_TRACE, "check: s %d\n", stage);
 
     if (stage == 0) {
         if (msg->from == RDBMSG_ROUTE_NA) { // all from possibilitied need to be checked)
@@ -338,10 +339,9 @@ int rdbmsg_free (plugins_t *ctx, rdbmsg_queue_t *q) {
 #ifdef USE_MSG_BUFFERS
     //rdbmsg_msg_t *msg;
     //            msg=&(q->msg);
-    //printf("free msg %d\n",msg->id);
     rdb_lock(ctx->empty_msg_store,__FUNCTION__);
     if (0 == rdb_insert(ctx->empty_msg_store, q)) {
-        log (LOG_ERROR, "failed to release buffer\n");
+        fwlog (LOG_ERROR, "failed to release buffer\n");
         rdb_unlock(ctx->empty_msg_store,__FUNCTION__);
         return -1;
     }
@@ -387,7 +387,7 @@ int emit_simple_cb (void *data, void *user_ptr) {
         // omitted.
         rc = rdb_insert(ctx->msg_q_pool, q);
         if (rc == 0) {
-            log (LOG_ERROR, "rdb_insertion fail while sending %d to %s. message discarded\n",msg->id, ctx->name);
+            fwlog (LOG_ERROR, "rdb_insertion fail while sending %d to %s. message discarded\n",msg->id, ctx->name);
             return RDB_CB_OK;
             //goto emit_err;
         }
@@ -410,7 +410,7 @@ int emit_simple_cb (void *data, void *user_ptr) {
             usleep(0);
             printf("%d\n",ctx->msg_pending_count);
         }
-        log (LOG_TRACE, "msg emitted to %s (id=%d)\n",ctx->name, q->msg.id);
+        fwlog (LOG_TRACE, "msg emitted to %s (id=%d)\n",ctx->name, q->msg.id);
         return RDB_CB_OK; // no need to continue testing ths plug in
     } //else info("%s not subscribed (id=%d)\n",ctx->name, msg->id);
 
@@ -420,7 +420,7 @@ int emit_simple_cb (void *data, void *user_ptr) {
 
 emit_simple_err:
     //TODO: do we want to abort? report error somehow?
-    log (LOG_ERROR, "out of message buffers sending %d to %s\n",msg->id, ctx->name);
+    fwlog (LOG_ERROR, "out of message buffers sending %d to %s\n",msg->id, ctx->name);
     return RDB_CB_OK;
 }
 
@@ -467,7 +467,7 @@ int emit_cb (void *data, void *user_ptr) {
         } 
         else {
             //TODO: Alloc!!!
-            log (LOG_ERROR, "out of memory sending %d to %s. message discarded\n",msg->id, ctx->name);
+            fwlog (LOG_ERROR, "out of memory sending %d to %s. message discarded\n",msg->id, ctx->name);
             q = NULL; // ensure we don't free a random pointer
             goto emit_err;
         }
@@ -480,7 +480,7 @@ int emit_cb (void *data, void *user_ptr) {
         q = calloc(1,sizeof(rdbmsg_queue_t)) ;
 #endif
         if (q == NULL) {
-            log (LOG_ERROR, "out of message buffers sending %d to %s\n",msg->id, ctx->name);
+            fwlog (LOG_ERROR, "out of message buffers sending %d to %s\n",msg->id, ctx->name);
             goto emit_err;
         }
         memset(q,0,sizeof(rdbmsg_queue_t));
@@ -494,7 +494,7 @@ int emit_cb (void *data, void *user_ptr) {
         // omitted.
         rc = rdb_insert(ctx->msg_q_pool, q);
         if (rc == 0) {
-            log (LOG_ERROR, "rdb_insertion fail while sending %d to %s. message discarded\n",msg->id, ctx->name);
+            fwlog (LOG_ERROR, "rdb_insertion fail while sending %d to %s. message discarded\n",msg->id, ctx->name);
             goto emit_err;
         }
         __sync_fetch_and_add(&ctx->msg_pending_count, 1);
@@ -516,7 +516,7 @@ int emit_cb (void *data, void *user_ptr) {
             usleep(0);
             printf("%d\n",ctx->msg_pending_count);
         }
-        log (LOG_TRACE, "msg emitted to %s (id=%d)\n",ctx->name, q->msg.id);
+        fwlog (LOG_TRACE, "msg emitted to %s (id=%d)\n",ctx->name, q->msg.id);
         return RDB_CB_OK; // no need to continue testing ths plug in
     } //else info("%s not subscribed (id=%d)\n",ctx->name, msg->id);
 
@@ -640,8 +640,8 @@ void rdbmsg_destroy_tree (void *data, void *user_ptr, int stage) {
             else return;
     }
 
-    log (LOG_DEBUG, "flushing %s %d\n", pool->name, stage);
-    log (LOG_INFO, "--Dropping pool %s\n", pool->name);
+    fwlog (LOG_DEBUG, "flushing %s %d\n", pool->name, stage);
+    fwlog (LOG_INFO, "--Dropping pool %s\n", pool->name);
     if (pool && pool->root[0]) rdb_flush(pool, unlink_rdbmsg_cb, NULL);
     pool->drop=1;
     return;
@@ -654,7 +654,7 @@ int rdbmsg_clean_cb (void *data, void *user_ptr) {
 
     ctx = (plugins_t *) data;
 
-    log (LOG_DEBUG, "Cleaning %s\n", ctx->name);
+    fwlog (LOG_DEBUG, "Cleaning %s\n", ctx->name);
     rdbmsg_destroy_tree (ctx->msg_dispatch_root, NULL, 0);
 
     return RDB_CB_OK;

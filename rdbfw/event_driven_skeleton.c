@@ -26,7 +26,7 @@ struct timespec ts[3];
 static void *skel_event(void *p) {
     rdbmsg_msg_t *msg;
     rdbmsg_queue_t *q;
-    log (LOG_INFO, "Starting %s\n", ctx->name);
+    fwlog (LOG_INFO, "Starting %s\n", ctx->name);
     static int first_entry = 1;
 
 #ifdef USE_PRCTL
@@ -66,11 +66,11 @@ static void *skel_event(void *p) {
                 if (msg->id ==  RDBMSG_ID_TIMER_ACK) {
                     // now ask to receive (in addition) messages for assigned timer    
                     if (0 != rdbmsg_request(ctx, RDBMSG_ROUTE_NA, RDBMSG_ROUTE_NA, RDBMSG_GROUP_TIMERS, RDBMSG_ID_TIMER_TICK_0 + msg->len)) {
-                        log (LOG_ERROR, "rdbmsg_request failed. events may not fire. Aborting");
+                        fwlog (LOG_ERROR, "rdbmsg_request failed. events may not fire. Aborting");
                         ctx->state = RDBFW_STATE_SOFTSTOPALL;
                     }
                     else {
-                        log (LOG_INFO, "got timer id %d\n",msg->len);
+                        fwlog (LOG_INFO, "got timer id %d\n",msg->len);
                     }
                 }
                 
@@ -92,7 +92,7 @@ static void *skel_event(void *p) {
 static void skel_event_destroy(void *p) {
     ctx = p;
     
-    log (LOG_INFO, "Destroy %s\n", ctx->name);
+    fwlog (LOG_INFO, "Destroy %s\n", ctx->name);
     ctx->state = RDBFW_STATE_LOADED;
 
 }
@@ -100,7 +100,7 @@ static void skel_event_destroy(void *p) {
 static void skel_event_init(void *p) {
     ctx = p;
     
-    log (LOG_INFO, "Initilizing %s\n", ctx->name);
+    fwlog (LOG_INFO, "Initilizing %s\n", ctx->name);
 
     pthread_mutex_init(&ctx->msg_mutex, NULL);
     pthread_cond_init(&ctx->msg_condition, NULL);
@@ -109,7 +109,7 @@ static void skel_event_init(void *p) {
  
     // ask to receive messages of type... Timers Ack.    
     if (0 != rdbmsg_request(p, RDBMSG_ROUTE_NA, RDBMSG_ROUTE_MDL_EVENT_SKEL, RDBMSG_GROUP_TIMERS, RDBMSG_ID_TIMER_ACK)) {
-        log (LOG_ERROR, "rdbmsg_request failed. events may not fire. Aborting");
+        fwlog (LOG_ERROR, "rdbmsg_request failed. events may not fire. Aborting");
         ctx->state = RDBFW_STATE_STOPALL;
         return;
     }
@@ -130,24 +130,24 @@ static void skel_event_start(void *p) {
         }
         if (rc == EAGAIN) {
             if (cnt > MAX_THREAD_RETRY) {
-                log (LOG_ERROR, "Thread creation failed, MAX_THREAD_RETRY exusted\n");
+                fwlog (LOG_ERROR, "Thread creation failed, MAX_THREAD_RETRY exusted\n");
                 ctx->state = RDBFW_STATE_STOPALL;
                 return;
             } 
             else {
                 cnt++;
-                log (LOG_ERROR, "Thread creation failed, will retry\n");
+                fwlog (LOG_ERROR, "Thread creation failed, will retry\n");
                 usleep (100000);
                 continue;
             }
         }
         else if (rc == EPERM) {
-            log (LOG_ERROR, "Thread creation failed - missing permissions - aborting\n");
+            fwlog (LOG_ERROR, "Thread creation failed - missing permissions - aborting\n");
             ctx->state = RDBFW_STATE_STOPALL;
             return;
         }
         else if (rc == EINVAL) {
-            log (LOG_ERROR, "Thread creation failed - Invalid attribute - aborting\n");
+            fwlog (LOG_ERROR, "Thread creation failed - Invalid attribute - aborting\n");
             ctx->state = RDBFW_STATE_STOPALL;
             return;
         }

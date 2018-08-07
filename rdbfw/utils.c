@@ -2,6 +2,10 @@
 #include <time.h>
 #include <stdio.h>
 
+#include <stdlib.h>
+
+#include "utils.h"
+
 /* Calculate and redurn the time delta in nano-seconds, between two supplied
  * timespec structures (from, to).
  *
@@ -10,6 +14,45 @@
  *
  * on error (null input), zero is returned, and *res is unchanged
  */
+
+
+#define DIVIDER_1  1000000000
+#define SEC_TO_MSEC 1000
+#define NSEC_TO_MSEC 1000000
+
+
+int64_t clock_gettime_ms(struct timespec *res) {
+    struct timespec ts;
+    if (res == NULL) {
+        res = &ts;
+    }
+    if (-1 != clock_gettime(CLOCK_REALTIME, res)) {
+        return ts_to_ms(res);
+    } else {
+        return -1;
+    }
+}
+
+int64_t ts_to_ms(struct timespec *ts) {
+    if (!ts) {
+        return 0;
+    }
+    
+    if (ts->tv_sec < 0 || ts->tv_nsec < 0) {
+        return (-1 * (((int64_t) labs(ts->tv_sec) * SEC_TO_MSEC) + (labs(ts->tv_nsec) / NSEC_TO_MSEC)));
+    }
+    else {
+        return (((int64_t) ts->tv_sec * SEC_TO_MSEC) + (ts->tv_nsec / NSEC_TO_MSEC));
+    }
+}
+
+//UnitTested
+void ms_to_ts (int64_t ms, struct timespec *res) {
+    if (res != NULL) {
+        res->tv_sec = (ms / SEC_TO_MSEC) ;//* ((ms < 0) ? -1 : 1);
+        res->tv_nsec = (ms % SEC_TO_MSEC) * NSEC_TO_MSEC;// * ((res->tv_sec == 0 && (ms < 0)) ? -1 : 1);
+    }
+}
 
 uint64_t diff_time_ns(struct timespec *from, struct timespec *to,
                    struct timespec *res)

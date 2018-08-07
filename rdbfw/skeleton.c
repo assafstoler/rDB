@@ -25,7 +25,7 @@ static int break_requested = 0;
 
 static void *skeleton_main(void *p) {
 
-    log (LOG_INFO, "Starting %s\n", ctx->name);
+    fwlog (LOG_INFO, "Starting %s\n", ctx->name);
 
     pthread_mutex_unlock(&ctx->startup_mutex);
 
@@ -52,7 +52,7 @@ static void *skeleton_main(void *p) {
 static void skeleton_destroy(void *p) {
     ctx = p;
     
-    log (LOG_INFO, "Destroy %s\n", ctx->name);
+    fwlog (LOG_INFO, "Destroy %s\n", ctx->name);
     ctx->state = RDBFW_STATE_LOADED;
 
 }
@@ -60,7 +60,7 @@ static void skeleton_destroy(void *p) {
 static void skeleton_init(void *p) {
     ctx = p;
     
-    log (LOG_INFO, "Initilizing %s\n", ctx->name);
+    fwlog (LOG_INFO, "Initilizing %s\n", ctx->name);
 
     pthread_mutex_init(&ctx->msg_mutex, NULL);
     pthread_cond_init(&ctx->msg_condition, NULL);
@@ -82,24 +82,24 @@ static void skeleton_start(void *p) {
         }
         if (rc == EAGAIN) {
             if (cnt > MAX_THREAD_RETRY) {
-                log (LOG_ERROR, "Thread creation failed, MAX_THREAD_RETRY exusted\n");
+                fwlog (LOG_ERROR, "Thread creation failed, MAX_THREAD_RETRY exusted\n");
                 ctx->state = RDBFW_STATE_STOPALL;
                 return;
             } 
             else {
                 cnt++;
-                log (LOG_ERROR, "Thread creation failed, will retry\n");
+                fwlog (LOG_ERROR, "Thread creation failed, will retry\n");
                 usleep (100000);
                 continue;
             }
         }
         else if (rc == EPERM) {
-            log (LOG_ERROR, "Thread creation failed - missing permissions - aborting\n");
+            fwlog (LOG_ERROR, "Thread creation failed - missing permissions - aborting\n");
             ctx->state = RDBFW_STATE_STOPALL;
             return;
         }
         else if (rc == EINVAL) {
-            log (LOG_ERROR, "Thread creation failed - Invalid attribute - aborting\n");
+            fwlog (LOG_ERROR, "Thread creation failed - Invalid attribute - aborting\n");
             ctx->state = RDBFW_STATE_STOPALL;
             return;
         }
