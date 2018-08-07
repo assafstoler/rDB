@@ -342,6 +342,7 @@ int rdbmsg_free (plugins_t *ctx, rdbmsg_queue_t *q) {
     rdb_lock(ctx->empty_msg_store,__FUNCTION__);
     if (0 == rdb_insert(ctx->empty_msg_store, q)) {
         log (LOG_ERROR, "failed to release buffer\n");
+        rdb_unlock(ctx->empty_msg_store,__FUNCTION__);
         return -1;
     }
     rdb_unlock(ctx->empty_msg_store,__FUNCTION__);
@@ -385,7 +386,11 @@ int emit_simple_cb (void *data, void *user_ptr) {
         // which we test for above. so in the name of speed, test is 
         // omitted.
         rc = rdb_insert(ctx->msg_q_pool, q);
-        if (rc == 0) exit (0);
+        if (rc == 0) {
+            log (LOG_ERROR, "rdb_insertion fail while sending %d to %s. message discarded\n",msg->id, ctx->name);
+            return RDB_CB_OK;
+            //goto emit_err;
+        }
         __sync_fetch_and_add(&ctx->msg_pending_count, 1);
 #ifdef MSG_ACCOUNTING
         ctx->msg_rx_count++;
