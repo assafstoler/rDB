@@ -54,6 +54,9 @@ else()
     ADD_EXECUTABLE(rdbfw rdbfw.c messaging.c utils.c rdbfw.h hw_timers.c timers.c skeleton.c event_driven_skeleton.c)
     target_link_libraries (rdbfw pthread dl rdb_beta rt)
     
+    ADD_EXECUTABLE(rdbfw-test rdbfw.c messaging.c utils.c rdbfw.h hw_timers.c timers.c ../src/rDB.h)
+    target_link_libraries (rdbfw-test pthread dl rdb_beta rt)
+    set_target_properties(rdbfw-test PROPERTIES COMPILE_DEFINITIONS "TESTER")
 endif()
 
 if (NOT STATIC_BUILD)
@@ -82,3 +85,6 @@ if (NOT STATIC_BUILD)
     install(TARGETS hw_timers timers skeleton event_skeleton DESTINATION bin)
 endif()
 
+add_subdirectory(test)
+
+enable_testing()

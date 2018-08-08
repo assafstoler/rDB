@@ -1,7 +1,7 @@
 #include <inttypes.h>
 #include <time.h>
 #include <stdio.h>
-
+#include <string.h>
 #include <stdlib.h>
 
 #include "utils.h"
@@ -51,6 +51,99 @@ void ms_to_ts (int64_t ms, struct timespec *res) {
     if (res != NULL) {
         res->tv_sec = (ms / SEC_TO_MSEC) ;//* ((ms < 0) ? -1 : 1);
         res->tv_nsec = (ms % SEC_TO_MSEC) * NSEC_TO_MSEC;// * ((res->tv_sec == 0 && (ms < 0)) ? -1 : 1);
+    }
+}
+
+/*** clock_prep_abstime prepare a timer loaded with experation date in the future
+ *   for usage by appropriate functions / fimeouts
+ *
+ *   Able to handle all signess conbinations
+ *
+ *   Result is stored in to ts 
+ **/
+//unitTested
+int clock_prep_abstime(struct timespec *ts, int64_t delta, int read_clock) {
+    if (!read_clock || (-1 != clock_gettime(CLOCK_REALTIME, ts))) {
+        if (ts->tv_sec >=0 && ts->tv_nsec >=0) {
+            ts->tv_nsec += delta;
+            while ( ts->tv_nsec >= 1000000000 ) {
+                ts->tv_sec ++;
+                ts->tv_nsec -= 1000000000;
+            }
+            while ( ts->tv_nsec < 0 ) {
+                ts->tv_sec --;
+                ts->tv_nsec += 1000000000;
+            }
+        } else { //Negative
+            ts->tv_nsec = labs(ts->tv_nsec) - delta;
+            ts->tv_sec = labs(ts->tv_sec);
+
+            while ( ts->tv_nsec >= 1000000000 ) {
+                ts->tv_sec ++;
+                ts->tv_nsec -= 1000000000;
+            }
+            while ( ts->tv_nsec < 0 ) {
+                ts->tv_sec --;
+                ts->tv_nsec += 1000000000;
+            }
+
+            if (ts->tv_sec) {
+                ts->tv_sec *= -1;
+            } else {
+                ts->tv_nsec *= -1;
+            }
+        }
+
+        return 0;
+    } else {
+        return -1;
+    }
+}
+int is_ts_greater(struct timespec *subject, struct timespec *challenger) {
+    if (subject->tv_sec < challenger->tv_sec) {
+        return 1;
+    }
+    if (subject->tv_sec == challenger->tv_sec && subject->tv_nsec < challenger->tv_nsec) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+// UnitTested
+int is_ts_greater_equal(struct timespec *subject, struct timespec *challenger) {
+    if (subject->tv_sec < challenger->tv_sec) {
+        return 1;
+    }
+    if (subject->tv_sec == challenger->tv_sec && subject->tv_nsec <= challenger->tv_nsec) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+// UnitTested
+int is_ts_lesser(struct timespec *subject, struct timespec *challenger) {
+    if (subject->tv_sec > challenger->tv_sec) {
+        return 1;
+    }
+    if (subject->tv_sec == challenger->tv_sec && subject->tv_nsec > challenger->tv_nsec) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+// UnitTested
+int is_ts_lesser_equal(struct timespec *subject, struct timespec *challenger) {
+    if (subject->tv_sec > challenger->tv_sec) {
+        return 1;
+    }
+    if (subject->tv_sec == challenger->tv_sec && subject->tv_nsec >= challenger->tv_nsec) {
+        return 1;
+    }
+    else {
+        return 0;
     }
 }
 
@@ -172,4 +265,35 @@ void print_time (struct timespec *ts)
     printf("%'ld.%09ld\n",
            (long) ts->tv_sec,
            ts->tv_nsec);
+}
+
+// print at most len-1 characters of time into string
+// *
+char *snprint_ts_time (struct timespec *ts, char *string, int len) 
+{
+    //int mult = 1;
+    int used = 0;
+    char *ptr;
+
+    if (len < 2) {
+        *string = 0;
+        return NULL;
+    }
+
+    if (ts->tv_sec < 0 || (ts->tv_sec == 0 && ts->tv_nsec < 0)) {
+        snprintf(string,2,"-");
+        used = 1;
+        //mult = -1;
+    } 
+    else {
+       *string = 0;
+       used = 0;
+    }
+
+    ptr = string + used;
+
+    snprintf(ptr, len - used, "%'ld.%09ld",
+           labs(ts->tv_sec) /** mult*/,
+           labs(ts->tv_nsec) /** mult*/);
+    return string;
 }

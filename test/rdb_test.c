@@ -33,7 +33,7 @@
 // On how many indexes we would refferance our demo data.
 // the use of define here is not required and done for conveniance only
 
-#define TEST_INDEXES 15
+#define TEST_INDEXES 17
 // Index numbers can change when / if we add or remove indexes.
 // It's a good programing disciplan to define a name to the indexes to
 // avoid unexpected behaviour when that happens
@@ -50,9 +50,11 @@
 #define IDX_I64     9
 #define IDX_UI128   10
 #define IDX_I128    11
-#define IDX_CUSTOM  12
-#define IDX_FIFO    13
-#define IDX_LIFO    14
+#define IDX_CUSTOM_1  12
+#define IDX_CUSTOM_2  13
+#define IDX_FIFO    14
+#define IDX_LIFO    15
+#define IDX_KPTR    16
 //#defnie IDX_UI256
 //#defnie IDX_I256
 //
@@ -158,6 +160,16 @@ int compare_custom_index(void *a, void *b){
     
     return ((*ia < *ib) ? -1 : (*ia > *ib) ? 1 : strncmp(sa,sb,5));
 }
+
+int compare_custom_2_index(void *a, void *b){
+    uint8_t *ia, *ib;
+
+    ib = a;
+    ia = b;
+    
+    return ((*ia < *ib) ? -1 : (*ia > *ib) ? 1 : 0);
+}
+
 
 #ifdef __out
 // Insert one record, and dump it to stdout, then flush tree
@@ -351,10 +363,16 @@ int register_pool_1() {
                             NULL) == -1) return -1;
 */
     if (rdb_register_um_idx(pool1,
-                            IDX_CUSTOM, 
+                            IDX_CUSTOM_1, 
                             (void *) &td.ud1 - (void *) &td.string,
                             RDB_KCF | RDB_KASC | RDB_BTREE,
                             compare_custom_index) == -1) return -1;
+
+    if (rdb_register_um_idx(pool1,
+                            IDX_CUSTOM_2, 
+                            (void *) &td.ui8 - (void *) &td.string,
+                            RDB_KCF | RDB_KASC | RDB_BTREE,
+                            compare_custom_2_index) == -1) return -1;
     
     if (rdb_register_um_idx(pool1,
                             IDX_FIFO, 
@@ -366,6 +384,12 @@ int register_pool_1() {
                             IDX_LIFO, 
                             0,
                             RDB_KLIFO | RDB_NO_IDX | RDB_BTREE,
+                            NULL) == -1) return -1;
+    
+    if (rdb_register_um_idx(pool1,
+                            IDX_KPTR, 
+                            (void *) &td.string_ptr - (void *) &td.string,
+                            RDB_KPTR | RDB_KASC | RDB_BTREE,
                             NULL) == -1) return -1;
 
     return 0;
@@ -462,10 +486,16 @@ int register_pool_2() {
                             NULL) == -1) return -1;
 */
     if (rdb_register_um_idx(pool2,
-                            IDX_CUSTOM, 
+                            IDX_CUSTOM_1, 
                             (void *) &td.ud1 - (void *) &td.string,
                             RDB_KCF | RDB_KASC | RDB_BTREE,
                             compare_custom_index) == -1) return -1;
+
+    if (rdb_register_um_idx(pool2,
+                            IDX_CUSTOM_2, 
+                            (void *) &td.ui8 - (void *) &td.string,
+                            RDB_KCF | RDB_KASC | RDB_BTREE,
+                            compare_custom_2_index) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_FIFO, 
@@ -477,6 +507,12 @@ int register_pool_2() {
                             IDX_LIFO, 
                             0,
                             RDB_KLIFO | RDB_NO_IDX | RDB_BTREE,
+                            NULL) == -1) return -1;
+    
+    if (rdb_register_um_idx(pool2,
+                            IDX_KPTR, 
+                            (void *) &td.string_ptr - (void *) &td.string,
+                            RDB_KPTR | RDB_KASC | RDB_BTREE,
                             NULL) == -1) return -1;
     
     return 0;
@@ -517,6 +553,7 @@ int add_test_data (rdb_pool_t *pool, int loops) {
                     for (d=0; d<loops; d++) {
                          ptd=malloc(sizeof(test_data_t));
                          if (ptd==NULL) fatal("Allocation error in %s\n",__FUNCTION__);
+                         //printf("%p - ",ptd);
                          ptd->string_ptr = calloc(1,16);
                          if (ptd->string_ptr == NULL) return -1;
                          ptd->string[0]='A' + d;
@@ -528,6 +565,7 @@ int add_test_data (rdb_pool_t *pool, int loops) {
                     *(ptd->string_ptr+1)='a' + c;
                     *(ptd->string_ptr+2)='a' + b;
                          *(ptd->string_ptr+3)='a' + a;
+                         //printf("%p %s\n",ptd->string_ptr,ptd->string_ptr);
                     // We could have pre-calculated the various LOOPS powers out
                     // of this loop, to increase perfoemance, but not an issue
                     // for this test
@@ -660,13 +698,13 @@ static int my_dump_drop_2(void *ptr){
 	return RDB_CB_OK;
 }
 
-static int my_dump_stop_at_5(void *ptr){
+/*static int my_dump_stop_at_5(void *ptr){
 	ptd=ptr;
     printf("%d,",ptd->ui32);
 
 	if (ptd->ui32 == 5) return RDB_CB_ABORT;
 	return RDB_CB_OK;
-}
+}*/
 static int my_dump_one_clean(void *ptr){
 	one_ptd=ptr;
     //printf("*\n");
@@ -754,7 +792,7 @@ int main(int argc, char *argv[]) {
         if (-1 == add_test_data(pool1,loops))
             fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
 
-        if (dump >= 13) {
+        if (dump >= IDX_FIFO) {
             // FIFO/LIFO - dump will show address but that's dynamic so not much
             // value for uit tests... so we print index 0 data by order of dump
             while ((ptd = rdb_delete(pool1,dump,NULL)) != NULL) {
@@ -877,15 +915,15 @@ int main(int argc, char *argv[]) {
         info("%s\n","");
 
         // FIFO tests
-        rdb_iterate(pool1,13,(void *) &my_dump_clean, NULL, NULL, NULL);
+        rdb_iterate(pool1,IDX_FIFO,(void *) &my_dump_clean, NULL, NULL, NULL);
         info("%s\n","");
-        rdb_delete (pool1, 13, NULL);
-        rdb_delete (pool1, 14, NULL);
-        rdb_iterate(pool1,14,(void *) &my_dump_clean, NULL, NULL, NULL);
+        rdb_delete (pool1, IDX_FIFO, NULL);
+        rdb_delete (pool1, IDX_LIFO, NULL);
+        rdb_iterate(pool1,IDX_LIFO,(void *) &my_dump_clean, NULL, NULL, NULL);
         info("%s\n","");
-        rdb_iterate(pool1,14,(void *) &my_dump_drop_2, NULL, NULL, NULL);
+        rdb_iterate(pool1,IDX_LIFO,(void *) &my_dump_drop_2, NULL, NULL, NULL);
         info("%s\n","");
-        rdb_iterate(pool1,13,(void *) &my_dump_clean, NULL, NULL, NULL);
+        rdb_iterate(pool1,IDX_FIFO,(void *) &my_dump_clean, NULL, NULL, NULL);
         info("%s\n","");
 
         rdb_dump(pool1, 2, ",");
@@ -947,29 +985,120 @@ int main(int argc, char *argv[]) {
             info("Neigh Get - hit Fail %p %p %p\n",ptr ,before, after);
         }
         
-        del_idx = 0;
+        del_idx = 10;
         tbefore = tafter = NULL;
-        if (NULL == (tptr = rdb_get_neigh(pool1, 2, &del_idx, &tbefore, &tafter)) && ((NULL != tbefore) || (NULL  != tafter))) {
+        if (NULL == (tptr = rdb_get_neigh(pool1, 2, &del_idx, (void **) &tbefore, (void **) &tafter)) && ((NULL != tbefore) || (NULL  != tafter))) {
             info("Neigh Get - miss OK\n");
             if (tbefore && tafter) {
-                debug ("search %d b %hhu a %hhu\n", del_idx, tbefore->ui8, tafter->ui8);
+                info ("search %d b %hhu a %hhu\n", del_idx, tbefore->ui8, tafter->ui8);
             }
             else if (tafter) {
-                debug ("search %d b --- a %hhu\n", del_idx, tafter->ui8);
+                info ("search %d b --- a %hhu\n", del_idx, tafter->ui8);
             }
             else {
-                debug ("search %d b %hhu a ---\n", del_idx, tbefore->ui8);
+                info ("search %d b %hhu a ---\n", del_idx, tbefore->ui8);
             }
         } else {
             info("Neigh Get - miss Fail %p %p %p (hhu)\n",tptr ,tbefore, tafter);
             if (tafter) info ("search %d b hhu a %hhu\n", del_idx, /*tbefore->ui8*/ tafter->ui8);
         }
+        
+        if (NULL == (tptr = rdb_get_neigh(pool1, IDX_CUSTOM_2, &del_idx, (void **)  &tbefore, (void **) &tafter)) && ((NULL != tbefore) || (NULL  != tafter))) {
+            info("Neigh Get - miss OK\n");
+            if (tbefore && tafter) {
+                info ("search %d b %hhu a %hhu\n", del_idx, tbefore->ui8, tafter->ui8);
+            }
+            else if (tafter) {
+                info ("search %d b --- a %hhu\n", del_idx, tafter->ui8);
+            }
+            else {
+                info ("search %d b %hhu a ---\n", del_idx, tbefore->ui8);
+            }
+        } else {
+            info("Neigh Get - miss Fail %p %p %p (hhu)\n",tptr ,tbefore, tafter);
+            if (tafter) info ("search %d b hhu a %hhu\n", del_idx, /*tbefore->ui8*/ tafter->ui8);
+        }
+        
 
         rdb_dump(pool1, 2, ",");
         info("%s\n","");
         rdb_dump(pool2, 2, ".");
         info("%s\n","");
+        //rdb_dump(pool2, IDX_KPTR, ".");
+        //info("%s\n","");
+       
+        // testing get_neight with Pointers 
+        ptd = rdb_get_const (pool1, 2, 5);
+        //info ("Address of %u if %p\n",ptd->ui32, ptd->string_ptr);
+        void *get_ptr, *p2; // , *p1;
+        test_data_t *b, *a, *n, *ptd2;
+        b = a = n = NULL;
+        get_ptr = ptd->string_ptr;
+        //ptd = rdb_get_const (pool2, IDX_KPTR, get_ptr);
+        ptd2 = rdb_get_const (pool1, 2, 11);
+        p2 = ptd->string_ptr;
+        //*p2 = p1;
+        //ptd2->string_ptr ++;
+        ptd = rdb_get (pool1, IDX_KPTR, &ptd2->string_ptr);
+        //info ("Address of %u if %p\n",ptd->ui32, ptd->string_ptr);
+        //p2 = NULL;
+        //info ("P2=%p\n", p2);
+
+        b = a = NULL;
+        ptd = rdb_get_neigh (pool1, IDX_KPTR,&p2, (void **) &b, (void **) &a);
+        if (a && b) {
+            info ("Before/After %u/%u\n",b->ui32, a->ui32);
+        }
+        else if (b) {
+            info ("Before/After %u/-\n",b->ui32);
+        }
+        else if (a) {
+            info ("Before/After -/%u\n", a->ui32);
+        }
+            //info ("Address of %u if %p\n",a->ui32, a->string_ptr);
+       // }
+        else if (ptd) {
+            info ("Match %u\n", ptd->ui32);
+            //info ("ptdAddress of %u if %p\n",ptd->ui32, ptd->string_ptr);
+        }
+      
+        info ("Between test "); 
+        b = a = NULL;
+        p2++;
+        ptd = rdb_get_neigh (pool1, IDX_KPTR,&p2, (void **) &b, (void **) &a);
+        if (a && b) {
+            info ("Before/After %u/%u\n",b->ui32, a->ui32);
+        }
+        else if (b) {
+            info ("Before/After %u/-\n",b->ui32);
+        }
+        else if (a) {
+            info ("Before/After -/%u\n", a->ui32);
+        }
+        else if (ptd) {
+            info ("Match %u\n", ptd->ui32);
+        }
         
+        info ("Null test "); 
+        b = a = NULL;
+        p2 = NULL;
+        ptd = rdb_get_neigh (pool1, IDX_KPTR,&p2, (void **) &b, (void **) &a);
+        if (a && b) {
+            info ("Before/After %u/%u\n",b->ui32, a->ui32);
+        }
+        else if (b) {
+            info ("Before/After %u/-\n",b->ui32);
+        }
+        else if (a) {
+            info ("Before/After -/%u\n", a->ui32);
+        }
+        else if (ptd) {
+            info ("Match %u\n", ptd->ui32);
+        }
+
+
+
+
         //info("%s\n","Empty Dump Start");
         rdb_flush(pool1,NULL,NULL);
         rdb_dump(pool1, 2, ",");

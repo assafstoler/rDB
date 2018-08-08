@@ -78,11 +78,11 @@ add_test (rdb_test_data_16_11 rdb_test -t3 -l2 -i11)
 set_tests_properties (rdb_test_data_16_11
     PROPERTIES PASS_REGULAR_EXPRESSION "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$")
 
-add_test (rdb_test_data_16_13 rdb_test -t3 -l2 -i13)
+add_test (rdb_test_data_16_13 rdb_test -t3 -l2 -i14)
 set_tests_properties (rdb_test_data_16_13
     PROPERTIES PASS_REGULAR_EXPRESSION "^AAAA,BAAA,ABAA,BBAA,AABA,BABA,ABBA,BBBA,AAAB,BAAB,ABAB,BBAB,AABB,BABB,ABBB,BBBB,\n$")
 
-add_test (rdb_test_data_16_14 rdb_test -t3 -l2 -i14)
+add_test (rdb_test_data_16_14 rdb_test -t3 -l2 -i15)
 set_tests_properties (rdb_test_data_16_14
     PROPERTIES PASS_REGULAR_EXPRESSION "^BBBB,ABBB,BABB,AABB,BBAB,ABAB,BAAB,AAAB,BBBA,ABBA,BABA,AABA,BBAA,ABAA,BAAA,AAAA,\n$")
 
@@ -92,7 +92,7 @@ set_tests_properties (rdb_test_data_get
 
 add_test (rdb_test_data_move rdb_test -t5)
 set_tests_properties (rdb_test_data_move
-    PROPERTIES PASS_REGULAR_EXPRESSION "^0,8,4,12,2,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,\n0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n14,13,12,11,10,9,8,7,6,5,4,3,2,1,\n14,13,12,11,10,9,8,7,6,5,4,3,1,\n1,3,4,5,6,7,8,9,10,11,12,13,14,\n1,3,4,5,6,7,8,9,10,11,12,13,14,\ninsert return = 15\ndump pool2 :8,\nre-insert return = 0\ndump pool2 :\ndump pool2 :8,\nGet OK\nNULL Get OK\nNeigh Get - hit OK\nNeigh Get - miss OK\n1,3,5,6,7,9,11,13,14,\n4.8.10.\n\nlock 0\nunlock\n$")
+    PROPERTIES PASS_REGULAR_EXPRESSION "^0,8,4,12,2,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,\n0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n14,13,12,11,10,9,8,7,6,5,4,3,2,1,\n14,13,12,11,10,9,8,7,6,5,4,3,1,\n1,3,4,5,6,7,8,9,10,11,12,13,14,\n1,3,4,5,6,7,8,9,10,11,12,13,14,\ninsert return = 17\ndump pool2 :8,\nre-insert return = 0\ndump pool2 :\ndump pool2 :8,\nGet OK\nNULL Get OK\nNeigh Get - hit OK\nNeigh Get - miss OK\nsearch 10 b 9 a 11\nNeigh Get - miss OK\nsearch 10 b 9 a 11\n1,3,5,6,7,9,11,13,14,\n4.8.10.\nMatch 5\nBetween test Before/After 5/6\nNull test Before/After -/1\n\nlock 0\nunlock\n$")
 
 add_test (rdb_test_registra rdb_test -t6)
 set_tests_properties (rdb_test_registra

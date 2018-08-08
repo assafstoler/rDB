@@ -1,7 +1,8 @@
 #ifndef __LOG_H
 #define __LOG_H
 #include "utils.h"
-#include "inttypes.h"
+#include <inttypes.h>
+#include <stdio.h>
 
 extern uint32_t log_level;
 extern pthread_mutex_t  log_mutex;

@@ -258,6 +258,18 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
         pool->fn[i] = key_cmp_uint8;
         pool->get_fn[i] = key_cmp_uint8;
         pool->get_const_fn[i] = key_cmp_const_uint8;
+    } else if (flags & RDB_KSIZE_t) {
+        pool->fn[i] = key_cmp_size_t;
+        pool->get_fn[i] = key_cmp_size_t;
+        pool->get_const_fn[i] = key_cmp_const_size_t;
+    } else if (flags & RDB_KSSIZE_t) {
+        pool->fn[i] = key_cmp_ssize_t;
+        pool->get_fn[i] = key_cmp_ssize_t;
+        pool->get_const_fn[i] = key_cmp_const_ssize_t;
+    } else if (flags & RDB_KPTR) {
+        pool->fn[i] = key_cmp_ptr;
+        pool->get_fn[i] = key_cmp_const_ptr;
+        pool->get_const_fn[i] = key_cmp_const_ptr;
     } 
 #ifdef USE_128_BIT_TYPES
       else if (flags & RDB_KINT128) {
@@ -587,6 +599,35 @@ int key_cmp_const_uint64 (uint64_t *old, __uintmax_t new)
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
 
+int key_cmp_ptr (void **old, void **new)
+{
+    if ( new == NULL ) {
+       return -1;
+    } 
+    return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
+}
+int key_cmp_const_ptr (void *old, size_t new)
+{
+    return ((void *) new <  old) ? -1 : (( (void *) new > old) ? 1 : 0); 
+}
+
+int key_cmp_size_t (size_t *old, size_t *new)
+{
+    return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
+}
+int key_cmp_const_size_t (size_t *old, size_t new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}
+
+int key_cmp_ssize_t (ssize_t *old, ssize_t *new)
+{
+    return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
+}
+int key_cmp_const_ssize_t (ssize_t *old, ssize_t new)
+{
+    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
+}
 /* 128 bit fn's are tricky when we don't have 128 native type to supply a 
  * comperator.
  * 256 bit's are alwways that way .... 
@@ -740,8 +781,16 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
             _rdb_dump (pool, index, separator, pp->left);
             levels--;
         }
-
+        void *ppp;
         switch (pool->FLAGS[index] & RDB_KEYS) {
+            case RDB_KPTR:
+                ppp= key->pStr;
+                c_info ("%p%s", (void *) key->pStr, separator);
+                /*c_info ("(%p%s:%p)", (void *) &(key->pStr), separator,key->pStr);
+                c_info ("[%p-%p%s]", (void *) ppp, &ppp, separator);*/
+                //c_info ("[%p-%p%s]", (void *) key->pStr, &ppp, separator);
+                break;
+
             case RDB_KPSTR:
                 c_info ("%s%s", key->pStr, separator);
                 break;
@@ -794,6 +843,13 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
                 c_info ("%lld%s", (long long) key->u128, separator);
                 break;
 #endif
+            case RDB_KSIZE_t:
+                c_info ("%zu%s", (size_t) key->st, separator);
+                break;
+
+            case RDB_KSSIZE_t:
+                c_info ("%zd%s", (ssize_t) key->sst, separator);
+                break;
             // we can't print custom functions data so we print the address
             // TODO: Consider adding a print-to-str fn() hook to pool, so we can dump custom-index data
             case RDB_KCF:

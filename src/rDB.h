@@ -83,6 +83,9 @@ extern "C" {
 #define RDB_KUINT128 (1 << 14)  // Key is an unsigned 128 bit integer - usefull for IPv6 !
 #define RDB_KINT256  (1 << 15)  // Key is an signed 256 bit integer.
 #define RDB_KUINT256 (1 << 16)  // Key is an unsigned 256 bit integer.
+#define RDB_KPTR     (1 << 17)  // Key is a native pointer.
+#define RDB_KSIZE_t  (1 << 18)  // Key is an unsigned native (size_t)
+#define RDB_KSSIZE_t (1 << 19)  // Key is a signed natve (ssize_t)
 
 // special case keys
 #define RDB_KTME	(1 << 25)	// Key is a time_t structure
@@ -98,7 +101,8 @@ extern "C" {
 
 #define RDB_KEYS (RDB_KPSTR | RDB_KSTR | RDB_KINT8 | RDB_KUINT8 | RDB_KINT16 | \
     RDB_KUINT16 | RDB_KINT32 | RDB_KUINT32 | RDB_KINT64 | RDB_KUINT64 | \
-    RDB_KINT128 | RDB_KUINT128 | RDB_KTME | RDB_KTMA | RDB_KCF)
+    RDB_KINT128 | RDB_KUINT128 | RDB_KPTR | RDB_KSIZE_t | RDB_KSSIZE_t | RDB_KTME | \
+    RDB_KTMA | RDB_KCF)
 #define RDB_NOKEYS (RDB_KFIFO | RDB_KLIFO)
 
 #define RDB_TREE_LEFT   0
@@ -113,7 +117,7 @@ extern "C" {
 #define RDB_CB_DELETE_NODE_AND_ABORT -4 // delete this node and stop iterating the tree
 #define RDB_CB_ABORT        -5  		// stop iterating the tree
 
-#define RDB_POOL_MAX_IDX 16      		// how many indexes we allow on each pool (tree)
+#define RDB_POOL_MAX_IDX 24      		// how many indexes we allow on each pool (tree)
 
 #ifdef USE_128_BIT_TYPES
 #define __intmax_t __int128_t
@@ -162,6 +166,8 @@ typedef union {
     uint16_t   		u16;
     uint32_t   		u32;
     uint64_t   		u64;
+    size_t          st;
+    ssize_t         sst;
 #ifdef USE_128_BIT_TYPES
     __int128_t  	i128;
     __uint128_t 	u128;
@@ -271,6 +277,9 @@ int         key_cmp_int32 (int32_t *old, int32_t *);
 int         key_cmp_uint32 (uint32_t *old, uint32_t *);
 int         key_cmp_int64 (int64_t *old, int64_t *);
 int         key_cmp_uint64 (uint64_t *old, uint64_t *);
+int         key_cmp_size_t (size_t *old, size_t *);
+int         key_cmp_ssize_t (ssize_t *old, ssize_t *);
+int         key_cmp_ptr (void **old, void **);
 #ifdef USE_128_BIT_TYPES
 int         key_cmp_int128 (__int128_t *old, __int128_t *);
 int         key_cmp_uint128 (__uint128_t *old, __uint128_t *);
@@ -287,6 +296,9 @@ int         key_cmp_const_int32 (int32_t *old, __intmax_t);
 int         key_cmp_const_uint32 (uint32_t *old, __uintmax_t);
 int         key_cmp_const_int64 (int64_t *old, __intmax_t);
 int         key_cmp_const_uint64 (uint64_t *old, __uintmax_t);
+int         key_cmp_const_size_t (size_t *old, size_t);
+int         key_cmp_const_ssize_t (ssize_t *old, ssize_t);
+int         key_cmp_const_ptr (void *old, size_t);
 #ifdef USE_128_BIT_TYPES
 int         key_cmp_const_int128 (__int128_t *old, __intmax_t);
 int         key_cmp_const_uint128 (__uint128_t *old, __uintmax_t);
