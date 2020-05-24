@@ -261,6 +261,7 @@ int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
 void       *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value);
 void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value);
 void       *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data);
+int         rdb_move2 (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data);
 void        rdb_drop_pool (rdb_pool_t *pool);
 void        rdb_print_pools(void *fp);
 char       *rdb_print_pool_stats (char *buf, int max_len);

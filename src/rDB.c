@@ -2486,6 +2486,16 @@ void *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data)
     return 0;
 }
 
+// same but slower, with move debug (not returning a pointer to data)
+int rdb_move2 (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data) {
+    void *ptr;
+    if ((ptr = rdb_delete (src_pool, idx, data))) {
+        if ( dst_pool->indexCount == rdb_insert (dst_pool, ptr)) return 0;
+        return -2;
+    }
+    return -1;
+}
+
 #ifdef KM
 static int __init init (void)
 {
