@@ -23,6 +23,7 @@ extern pthread_mutex_t  log_mutex;
         }           \
     } while (0)
 */
+#define fwlog_no_emit fwlog
 #define fwlog(a, b, arg...)  do {    \
         if (log_level >= a) {       \
             pthread_mutex_lock(&log_mutex); \
