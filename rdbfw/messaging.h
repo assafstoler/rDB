@@ -1,3 +1,7 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 #ifndef MESSAGING_H
 #define MESSAGING_H
 
@@ -5,6 +9,10 @@
 
 #define RDBMSG_RC_NO_MATCH       0
 #define RDBMSG_RC_IS_SUBSCRIBER  1
+
+#define RDBMSG_USE_MALLOC 0
+#define RDBMSG_USE_UNIQUE_FWALLOC 1
+#define RDBMSG_USE_SHARED_FWALLOC 2
 
 // Note: The following 4 enum's does not overlap.
 // This was done to allow delivery speed optimizations.
@@ -16,99 +24,43 @@
 #define NO_UNUSED_WARNING
 #endif
 
-#define FOREACH_ROUTE(ROUTE) \
-    ROUTE(RDBMSG_ROUTE_NA=0) \
-    ROUTE(RDBMSG_ROUTE_FW) \
-    ROUTE(RDBMSG_ROUTE_MDL_PINGPONG) \
-    ROUTE(RDBMSG_ROUTE_MDL_SOCKEER_COMM) \
-    ROUTE(RDBMSG_ROUTE_MDL_TIMERS) \
-    ROUTE(RDBMSG_ROUTE_MDL_TIMED) \
-    ROUTE(RDBMSG_ROUTE_MDL_EVENT_SKEL) \
-    ROUTE(RDBMSG_ROUTE_MAX=1023) \
 
 #define GENERATE_ENUM(ENUM) ENUM,
 #define GENERATE_STRING(STRING) #STRING,
 
-typedef enum ROUTE_ENUM {
-    FOREACH_ROUTE(GENERATE_ENUM)
-} rdbmsg_routing_e;
-
-static const char NO_UNUSED_WARNING *ROUTE_STRING[] = {
-    FOREACH_ROUTE(GENERATE_STRING)
-};
-
-
-#define FOREACH_GROUP(GROUP) \
-    GROUP(RDBMSG_GROUP_NA=0) \
-    GROUP(RDBMSG_GROUP_TIMERS) \
-    GROUP(RDBMSG_GROUP_LOGGING) \
-    GROUP(RDBMSG_GROUP_MAX=3095) \
-
-typedef enum GROUP_ENUM {
-    FOREACH_GROUP(GENERATE_ENUM)
-} rdbmsg_group_e;
-
-static const char NO_UNUSED_WARNING *GROUP_STRING[] = {
-    FOREACH_GROUP(GENERATE_STRING)
-};
-
-#define FOREACH_ID(ID) \
-    ID(RDBMSG_ID_NA=3096) \
-    ID(RDBMSG_ID_TIMER_START) \
-    ID(RDBMSG_ID_TIMER_STOP) \
-    ID(RDBMSG_ID_TIMER_ACK) \
-    ID(RDBMSG_ID_TIMER_TICK_0) \
-    ID(RDBMSG_ID_TIMER_TICK_1) \
-    ID(RDBMSG_ID_TIMER_TICK_2) \
-    ID(RDBMSG_ID_TIMER_TICK_3) \
-    ID(RDBMSG_ID_TIMER_TICK_4) \
-    ID(RDBMSG_ID_TIMER_TICK_5) \
-    ID(RDBMSG_ID_TIMER_TICK_6) \
-    ID(RDBMSG_ID_TIMER_TICK_7) \
-    ID(RDBMSG_ID_TIMER_TICK_8) \
-    ID(RDBMSG_ID_TIMER_TICK_9) \
-    ID(RDBMSG_ID_TIMER_TICK_10) \
-    ID(RDBMSG_ID_TIMER_TICK_11) \
-    ID(RDBMSG_ID_TIMER_TICK_12) \
-    ID(RDBMSG_ID_TIMER_TICK_13) \
-    ID(RDBMSG_ID_TIMER_TICK_14) \
-    ID(RDBMSG_ID_TIMER_TICK_15) \
-    ID(RDBMSG_ID_LAST_GASP) \
-    ID(RDBMSG_ID_MUX_STATE) \
-    ID(RDBMSG_ID_MAX=65535) \
-
-    // SAPI will replace individual status messages. Id's above remain to maintain correct sequance ID's
-
-
-typedef enum ID_ENUM {
-    FOREACH_ID(GENERATE_ENUM)
-} rdbmsg_id_e;
-
-static const char NO_UNUSED_WARNING *ID_STRING[] = {
-    FOREACH_ID(GENERATE_STRING)
-};
 
 //The following two structures must stay in sync for the overlapping portion.
 typedef struct rdbmsg_msg_s {
-    rdbmsg_routing_e    from;
-    rdbmsg_routing_e      to;
-    rdbmsg_group_e   group;
-    rdbmsg_id_e      id;
+    int             from;
+    int             to;
+    int             group;
+    int             id;
     int             len;
+    int64_t         emit_ns;
     void            *data;
     int             legacy;     // Legacy message will be (also) transleted to legacy netlink messag system 
+    int             use_fwalloc; // use framework allocator for emit_message()
+    void            (*data_cleanup)(void *); // function used to free the data section, if any NULL is ok (flat)
 } rdbmsg_msg_t;
 
 typedef struct rdbmsg_internal_msg_s {
-    rdbmsg_routing_e    from;
-    rdbmsg_routing_e      to;
-    rdbmsg_group_e   group;
-    rdbmsg_id_e      id;
+    int             from;
+    int             to;
+    int             group;
+    int             id;
     int             len;
+    int64_t         emit_ns;
     void            *data;
     int             legacy;     // Legacy message will be (also) transleted to legacy netlink messag system 
+    int             use_fwalloc; // use framework allocator for emit_message()
+    void            (*data_cleanup)(void *); // function used to free the data section, if any NULL is ok (flat)
     int             rc;         // this is used as a return code for message dispatch lookup.
     int             emitted;    // count for how many clients this message has been emitted
+    // related to WIP - custom message queues
+    rdb_pool_t              *msg_q_pool; // !null == this message uses custom dispatch pool
+    pthread_mutex_t         *msg_mutex;  // and mutex
+    pthread_cond_t          *msg_condition;  // and condition
+    void            *data_ref;  // pointer to data to _up_ref_ if we use emit_by_ref
 } rdbmsg_internal_msg_t;
 
 
@@ -132,7 +84,18 @@ typedef struct rdbmsg_dispatch_s {
     rdb_bpp_t               pp[1];      // rdb pool index data
     uint32_t                value;      // value of [from | to | group | id]
     rdb_pool_t              *next;       // pointer to next level tree (form->to->group->id)
+    int                     use_fwalloc; // use framework allocator for emit_message()
+    rdb_pool_t              *pvt_msg_q_pool; // !null == this message uses custom dispatch pool
+    pthread_mutex_t         *pvt_msg_mutex;  // and mutex
+    pthread_cond_t          *pvt_msg_condition;  // and condition
+    void                    (*data_cleanup)(void *); // function used to free the data section, if any NULL is ok (flat)
 } rdbmsg_dispatch_t;
+
+typedef struct rdbmsg_msg_type_s {
+    rdb_bpp_t               pp[2];      // rdb pool index data
+    uint32_t                value;
+    char                    string[64];
+} rdbmsg_msg_type_t;
 
 
 // Used as a FIFO queue, one for each module (two if I already added out-of-bound
@@ -146,13 +109,25 @@ typedef struct rdbmsg_queue_s {
 
 void rdbmsg_register_hooks(void);
 
+int rdbmsg_register_msg_type (char *type, char *msg);
+int rdbmsg_lookup_id (char *str);
+char * rdbmsg_lookup_string (uint32_t value);
+
 int rdbmsg_init(rdb_pool_t *plugin_pool);
 int rdbmsg_request(void  *ctx, int from, int to, int group, int id);
+int rdbmsg_request_custom(void  *ctx, int from, int to, int group, int id,
+        int use_fwalloc,
+        rdb_pool_t *msg_q_pool,
+        pthread_mutex_t *msg_mutex,
+        pthread_cond_t *msg_condition );
 int rdbmsg_emit_simple(int from, int to, int group, int id, int data);
-int rdbmsg_emit (int from, int to, int group, int id, int length, void *data);
+int rdbmsg_emit (int from, int to, int group, int id, int length, void *data, void (*data_cleanup)(void *));
+int rdbmsg_emit_log (int from, int to, int group, int id, int length, void *data, int unlock);
 int rdbmsg_delay_HZ(int new_Hz);
 int rdbmsg_free (plugins_t *ctx, rdbmsg_queue_t *q);
+int rdbmsg_implode (plugins_t *ctx, rdbmsg_queue_t *q);
 void rdbmsg_destroy_tree (void *data, void *user_ptr, int stage);
+int rdbmsg_destroy (void);
 void rdbmsg_clean(void);
 
 #endif

@@ -1,3 +1,7 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 /*
  * The Timers module:
  *
@@ -64,6 +68,14 @@ static int break_requested = 0;
 
 static void *timer_thread(union sigval *p);
 
+static int route_na;
+static int timer_route;
+static int timer_group;
+static int timer_start_id;
+static int timer_stop_id;
+static int timer_ack_id;
+static int timer_tick[MAX_TIMERS];
+
 
 static int find_free_timer() {
     int i;
@@ -111,6 +123,11 @@ static void *timers_main(void *p) {
 #endif
 
     pthread_mutex_unlock(&ctx->startup_mutex);
+
+    //NOTE: if logging is required between this point and there msg_mutex is unlocked (a few lines below).
+    //It is required to use fwl_no_emit(), as regular logging will also emit a message, which will try to obtain
+    //same message mutex resulting in a deadlock!
+    //
     pthread_mutex_lock(&ctx->msg_mutex);
     while (break_requested == 0) {
         // first time we want to skip the condition as there may already be something in the Q, 
@@ -137,26 +154,26 @@ static void *timers_main(void *p) {
             if (q) {    // process message
                 fwlog (LOG_DEBUG_MORE, "%s: Received message grp.id = %d.%d\n",
                         ctx->name, q->msg.group, q->msg.id);
-                if (q->msg.id == RDBMSG_ID_TIMER_STOP) {
-                    timer_id = q->msg.len - RDBMSG_ID_TIMER_TICK_0;
+                if (q->msg.id == timer_stop_id) {
+                    timer_id = q->msg.len - timer_tick[0];
                     timer_delete(t_info[timer_id].hw_id);
                     t_info[timer_id].hz=0;
                 }
-                if (q->msg.id == RDBMSG_ID_TIMER_START) {
+                if (q->msg.id == timer_start_id) {
                     timer_id = find_free_timer();
                     // we reply to the request before starting the timer, 
                     // so receiver has a change to set up listener before ticks accomulate
-                    rdbmsg_emit_simple(RDBMSG_ROUTE_MDL_TIMERS, 
+                    rdbmsg_emit_simple(timer_route, 
                             q->msg.from,    // replying directly to the requester
-                            RDBMSG_GROUP_TIMERS,
-                            RDBMSG_ID_TIMER_ACK,
+                            timer_group,
+                            timer_ack_id,
                             timer_id);
                     if (timer_id != -1) {   // we got a timer
                         struct sigevent se; 
                         struct itimerspec ts;
 
                         t_info[timer_id].hz = q->msg.len;
-                        t_info[timer_id].id = timer_id + RDBMSG_ID_TIMER_TICK_0;
+                        t_info[timer_id].id = timer_id + timer_tick[0];
 
                         se.sigev_notify = SIGEV_THREAD;
                         se.sigev_value.sival_ptr = &t_info[timer_id].id;
@@ -190,7 +207,7 @@ static void *timers_main(void *p) {
                         }
                     }
                 }
-                rdbmsg_free(ctx, q);
+                rdbmsg_implode(ctx, q);
             } else {
                 break;
             }
@@ -203,25 +220,84 @@ static void *timers_main(void *p) {
     pthread_exit(NULL);
 }
 
+static void timers_pre_init(void *p) {
+    char *str;
+    int i;
+    str = malloc(64);
+
+    timer_route = rdbmsg_lookup_id("ROUTE_MDL_TIMERS"); 
+    if (timer_route <= 0) {
+        timer_route = rdbmsg_register_msg_type ( "route", "ROUTE_MDL_TIMERS" );
+    }
+    timer_group = rdbmsg_lookup_id("GROUP_TIMERS"); 
+    if (timer_group <= 0) {
+        timer_group = rdbmsg_register_msg_type ( "group", "GROUP_TIMERS" );
+    }
+    timer_start_id = rdbmsg_lookup_id("ID_TIMER_START"); 
+    if (timer_start_id <= 0) {
+        timer_start_id = rdbmsg_register_msg_type ( "id", "ID_TIMER_START" );
+    }
+    timer_stop_id = rdbmsg_lookup_id("ID_TIMER_STOP"); 
+    if (timer_stop_id <= 0) {
+        timer_stop_id = rdbmsg_register_msg_type ( "id", "ID_TIMER_STOP" );
+    }
+    timer_ack_id = rdbmsg_lookup_id("ID_TIMER_ACK"); 
+    if (timer_ack_id <= 0) {
+        timer_ack_id = rdbmsg_register_msg_type ( "id", "ID_TIMER_ACK" );
+    }
+
+    for (i = 0; i < MAX_TIMERS; i++) {
+        sprintf ( str, "ID_TIMER_TICK_%d",i);
+	int existing = rdbmsg_lookup_id (str);
+	fwl (LOG_DEBUG, p, "Existing timer %i, %s.\n", existing, str );
+	if (existing > 0) {
+            timer_tick[i] = existing;
+	} else {
+            timer_tick[i] = rdbmsg_register_msg_type ( "id", str );
+	}
+        if ( timer_tick[i] < 0 ) {
+            fwl (LOG_ERROR, p, "Unable to register message %s\n", str);
+            exit (1);
+        }
+    }
+    free (str);
+
+    if ( timer_route < 0 || timer_group < 0 || timer_start_id < 0 ||
+            timer_stop_id < 0 || timer_ack_id < 0 ) {
+        fwl (LOG_ERROR, p, "Unable to register message(s)\n");
+        exit (1);
+    }
+    else {
+        fwl (LOG_INFO, p, "register message(s) successfully\n");
+    }
+
+}
+
+
 static void timers_init(void *p) {
     ctx = p;
     mutex_ptr = &ctx->msg_mutex;
 
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-    ctx->state = RDBFW_STATE_INITILIZED;
+    ctx->state = RDBFW_STATE_INITIALIZED;
     attrp=&attr;
 
-    if (0 != rdbmsg_request(p, RDBMSG_ROUTE_NA, RDBMSG_ROUTE_MDL_TIMERS, RDBMSG_GROUP_NA, RDBMSG_ID_TIMER_START)){
+    route_na = rdbmsg_lookup_id ("ROUTE_NA");
+
+    if (0 != rdbmsg_request(p, route_na, timer_route,
+                rdbmsg_lookup_id ("GROUP_NA"), timer_start_id)) {
         fwlog (LOG_ERROR, "rdbmsg_request failed. events may not fire. Aborting (%d.%d.%d.%d)",
-                RDBMSG_ROUTE_NA, RDBMSG_ROUTE_MDL_TIMERS, RDBMSG_GROUP_NA, RDBMSG_ID_TIMER_START);
+                route_na, timer_route, 
+                rdbmsg_lookup_id ("GROUP_NA"), timer_start_id);
         ctx->state = RDBFW_STATE_STOPALL;
         return;
     }
-
-    if (0 != rdbmsg_request(p, RDBMSG_ROUTE_NA, RDBMSG_ROUTE_MDL_TIMERS, RDBMSG_GROUP_NA, RDBMSG_ID_TIMER_STOP)) {
+    if (0 != rdbmsg_request(p, route_na, timer_route,
+                rdbmsg_lookup_id ("GROUP_NA"), timer_stop_id)) {
         fwlog (LOG_ERROR, "rdbmsg_request failed. events may not fire. Aborting (%d.%d.%d.%d)",
-                RDBMSG_ROUTE_NA, RDBMSG_ROUTE_MDL_TIMERS, RDBMSG_GROUP_NA, RDBMSG_ID_TIMER_STOP);
+                route_na, timer_route, 
+                rdbmsg_lookup_id ("GROUP_NA"), timer_stop_id);
         ctx->state = RDBFW_STATE_STOPALL;
         return;
     }
@@ -231,7 +307,7 @@ static void timers_de_init(void *p) {
     ctx = p;
     int rc;
     
-    fwlog (LOG_INFO, "Destroy %s\n", ctx->name);
+    fwlog (LOG_INFO, "Destroy %s\n", ctx->uname);
     ctx->state = RDBFW_STATE_LOADED;
     
     rc = pthread_attr_destroy(attrp);
@@ -307,15 +383,16 @@ static void timers_start(void *P) {
 
 static void *timer_thread(union sigval *p)
 {
-    int id =  p->sival_int - RDBMSG_ID_TIMER_TICK_0;
+    int id =  p->sival_int - timer_tick[0]; 
 
     pthread_mutex_lock(mutex_ptr);
-    if (p->sival_int >= RDBMSG_ID_TIMER_TICK_0 && t_info[id].hz) {
-        rdbmsg_emit_simple(RDBMSG_ROUTE_NA, 
-            RDBMSG_ROUTE_NA,
-            RDBMSG_GROUP_TIMERS,
-            t_info[id].id,
-            t_info[id].counter++);
+    if (p->sival_int >= timer_tick[0] && t_info[id].hz) {
+        //TODO: emit only to requester
+        rdbmsg_emit_simple(route_na, 
+                route_na,
+                timer_group,
+                t_info[id].id,
+                t_info[id].counter++);
 
         if (t_info[id].counter >= t_info[id].hz) {
             t_info[id].counter -= t_info[id].hz ;
@@ -328,6 +405,7 @@ static void *timer_thread(union sigval *p)
 
 
 const rdbfw_plugin_api_t hw_timers_rdbfw_fns = {
+    .pre_init = timers_pre_init,
     .init = timers_init,
     .de_init = timers_de_init,
     .start = timers_start,

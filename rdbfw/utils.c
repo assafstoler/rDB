@@ -1,8 +1,19 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 #include <inttypes.h>
 #include <time.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+// filloing 3 includes are here to satisy logging
+#include <pthread.h>
+#include "rDB.h"
+#include "log.h"
 
 #include "utils.h"
 
@@ -20,6 +31,15 @@
 #define SEC_TO_MSEC 1000
 #define NSEC_TO_MSEC 1000000
 
+//int64_t clock_gettime_ms(struct timespec *res) ;
+void profiling (int64_t start, int threshold, const char *where) {
+    struct timespec ts;
+    int64_t loop_end_ms = clock_gettime_ms(&ts);
+    if (loop_end_ms - start >= threshold) {
+        fwlog (LOG_WARN, "%"PRIi64"ms delay @ %s\n", loop_end_ms - start,  where );
+    }
+
+}
 
 int64_t clock_gettime_ms(struct timespec *res) {
     struct timespec ts;
@@ -31,6 +51,23 @@ int64_t clock_gettime_ms(struct timespec *res) {
     } else {
         return -1;
     }
+}
+    
+void clock_settime_ms(int64_t new_time) {
+#ifdef __MACH__
+    // TODO: Only used on server... iOS only runs as client. give better log message / handle
+    // - this is since iOS won't allow to set the clock
+    return;
+#else
+    struct timespec ts;
+    ms_to_ts(new_time, &ts);
+    //ts.tv_sec = new_time / SEC_TO_MSEC;
+    //ts.tv_nsec = (new_time % SEC_TO_MSEC) * NSEC_TO_MSEC;
+    if (-1 == clock_settime(CLOCK_REALTIME, &ts)) {
+        fwlog (LOG_ERROR, "Faild to set clock\n");
+    }
+    return;
+#endif
 }
 
 int64_t ts_to_ms(struct timespec *ts) {
@@ -54,6 +91,39 @@ void ms_to_ts (int64_t ms, struct timespec *res) {
     }
 }
 
+void clock_settime_ns(int64_t new_time) {
+#ifdef __MACH__
+    // TODO: Only used on server... iOS only runs as client. give better log message / handle
+    // - this is since iOS won't allow to set the clock
+    return;
+#else
+    struct timespec ts;
+    ts.tv_sec = new_time / DIVIDER_1;
+    ts.tv_nsec = new_time % DIVIDER_1;
+    if (-1 == clock_settime(CLOCK_REALTIME, &ts)) {
+        fwlog (LOG_ERROR, "Faild to ste clock\n");
+    }
+    return;
+#endif
+}
+
+uint64_t clock_gettime_uns(void) {
+    struct timespec ts;
+    if (-1 != clock_gettime(CLOCK_MONOTONIC, &ts)) {
+        return (uint64_t) (ts.tv_sec) * 1000000000 + ts.tv_nsec;
+    } else {
+        return UINT64_MAX;
+    }
+}
+int64_t clock_gettime_us(void) {
+    struct timespec ts;
+    if (-1 != clock_gettime(CLOCK_MONOTONIC, &ts)) {
+        return ((int64_t) (ts.tv_sec) * 1000000000 + ts.tv_nsec) / 1000;
+    } else {
+        return -1;
+    }
+}
+
 /*** clock_prep_abstime prepare a timer loaded with experation date in the future
  *   for usage by appropriate functions / fimeouts
  *
@@ -64,34 +134,38 @@ void ms_to_ts (int64_t ms, struct timespec *res) {
 //unitTested
 int clock_prep_abstime(struct timespec *ts, int64_t delta, int read_clock) {
     if (!read_clock || (-1 != clock_gettime(CLOCK_REALTIME, ts))) {
+        int64_t ns;
         if (ts->tv_sec >=0 && ts->tv_nsec >=0) {
-            ts->tv_nsec += delta;
-            while ( ts->tv_nsec >= 1000000000 ) {
+            ns = ts->tv_nsec + delta;
+            while ( ns >= 1000000000 ) {
                 ts->tv_sec ++;
-                ts->tv_nsec -= 1000000000;
+                ns -= 1000000000;
             }
-            while ( ts->tv_nsec < 0 ) {
+            while ( ns < 0 ) {
                 ts->tv_sec --;
-                ts->tv_nsec += 1000000000;
+                ns += 1000000000;
             }
+            ts->tv_nsec = ns;
         } else { //Negative
-            ts->tv_nsec = labs(ts->tv_nsec) - delta;
+            ns = labs(ts->tv_nsec) - delta;
+            //ts->tv_nsec = labs(ts->tv_nsec) - delta;
             ts->tv_sec = labs(ts->tv_sec);
 
-            while ( ts->tv_nsec >= 1000000000 ) {
+            while ( ns >= 1000000000 ) {
                 ts->tv_sec ++;
-                ts->tv_nsec -= 1000000000;
+                ns -= 1000000000;
             }
-            while ( ts->tv_nsec < 0 ) {
+            while ( ns < 0 ) {
                 ts->tv_sec --;
-                ts->tv_nsec += 1000000000;
+                ns += 1000000000;
             }
 
             if (ts->tv_sec) {
                 ts->tv_sec *= -1;
             } else {
-                ts->tv_nsec *= -1;
+                ns *= -1;
             }
+            ts->tv_nsec = ns;
         }
 
         return 0;
@@ -147,7 +221,7 @@ int is_ts_lesser_equal(struct timespec *subject, struct timespec *challenger) {
     }
 }
 
-uint64_t diff_time_ns(struct timespec *from, struct timespec *to,
+/*uint64_t diff_time_ns(struct timespec *from, struct timespec *to,
                    struct timespec *res)
 {
     struct timespec tmp_time;
@@ -170,7 +244,7 @@ uint64_t diff_time_ns(struct timespec *from, struct timespec *to,
     }
 
     return (uint64_t) res->tv_sec *  1000000000LL + res->tv_nsec;
-}
+}*/
 
 int64_t s_ts_diff_time_ns(struct timespec *from, struct timespec *to,
                    struct timespec *res)
@@ -260,11 +334,58 @@ int64_t s_ts_diff_time_ns(struct timespec *from, struct timespec *to,
 /* print time to stdout
  *
  */
+void print_now (FILE *fp)
+{
+    struct timespec tmp_time;
+    if (-1 != clock_gettime(CLOCK_REALTIME, &tmp_time)) {
+        fprintf(fp, "%'lu.%09lu: ",
+            tmp_time.tv_sec,
+            tmp_time.tv_nsec);
+    }
+
+}
 void print_time (struct timespec *ts)
 {
-    printf("%'ld.%09ld\n",
-           (long) ts->tv_sec,
-           ts->tv_nsec);
+    fprintf(logger, "%'lu.%09lu\n",
+            ts->tv_sec,
+            ts->tv_nsec);
+}
+void print_time_ns (int64_t time) 
+{
+    fprintf(logger, "%'"PRIi64".%09"PRIi64"\n",
+           time / 1000000000, 
+           time % 1000000000);
+}
+
+// print at most len-1 characters of time into string
+// TODO: Unittest
+char *snprint_time_ns (int64_t time, char *string, int len) 
+{
+    int64_t abs_time;
+    int used = 0;
+    char *ptr;
+    if (len < 2) {
+        *string = 0;
+        return NULL;
+    }
+
+    if (time < 0) {
+        snprintf(string,2,"-");
+        used = 1;
+        abs_time = time * -1;
+    } 
+    else {
+       *string = 0;
+       used = 0;
+        abs_time = time;
+    }
+
+    ptr = string + used;
+
+    snprintf(ptr, len - used, "%'"PRIi64".%09"PRIi64"",
+           abs_time / 1000000000, 
+           abs_time % 1000000000);
+    return string;
 }
 
 // print at most len-1 characters of time into string
@@ -296,4 +417,25 @@ char *snprint_ts_time (struct timespec *ts, char *string, int len)
            labs(ts->tv_sec) /** mult*/,
            labs(ts->tv_nsec) /** mult*/);
     return string;
+}
+
+int fd_set_flag(int fd, int flag, int command) {
+
+    int flags;
+  
+    flags = fcntl(fd, F_GETFL, 0);
+
+    if (flags == -1) {
+        return -0;
+    }
+
+    if (FLAG_SET) {
+        flags &= ~flag;
+    }
+
+    else {
+        flags |= flag;
+    }
+
+    return fcntl(fd, F_SETFL, flags) != -1;
 }

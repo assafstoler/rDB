@@ -1,9 +1,14 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 #ifndef __rDB_h_
 #define __rDB_h_
 
 #ifndef KM
 #include <sys/time.h>
 #include <stdint.h>
+#include <stddef.h>
 #else
 #include <linux/types.h>
 #endif
@@ -127,8 +132,8 @@ extern "C" {
 #define __intmax_t int64_t
 #define __uintmax_t uint64_t
 #else
-#define __intmax_t __int64_t
-#define __uintmax_t __uint64_t
+#define __intmax_t int64_t
+#define __uintmax_t uint64_t
 #endif
 #endif
 
@@ -260,6 +265,7 @@ int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
 void       *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value);
 void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value);
 void       *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data);
+int         rdb_move2 (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data);
 void        rdb_drop_pool (rdb_pool_t *pool);
 void        rdb_print_pools(void *fp);
 char       *rdb_print_pool_stats (char *buf, int max_len);

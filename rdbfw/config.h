@@ -1,3 +1,7 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
 

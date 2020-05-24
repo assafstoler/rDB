@@ -1,3 +1,7 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 /*
  * The Timers module:
  *
@@ -50,6 +54,7 @@ typedef struct t_info_s {
     uint32_t hz;
     int id;
     int counter;
+    int stop;
 } t_info_t;
 
 static t_info_t t_info[MAX_TIMERS];
@@ -63,30 +68,46 @@ static int break_requested = 0;
 
 static void *timer_thread(void *p);
 
+static int timer_route;
+static int timer_group;
+static int timer_start_id;
+static int timer_stop_id;
+static int timer_ack_id;
+static int timer_tick[MAX_TIMERS];
+
 
 static int find_free_timer() {
     int i;
 
+    pthread_mutex_lock(&ctx->msg_mutex);
     for (i = 0; i < MAX_TIMERS; i++) {
         if (t_info[i].hz == 0) {
+            t_info[i].stop = 0;
+            pthread_mutex_unlock(&ctx->msg_mutex);
             return i;
         }
     }
+
+    pthread_mutex_unlock(&ctx->msg_mutex);
     return -1;
 }
 
 static void timers_stop_all(void){
     int i;
 
+    pthread_mutex_lock(&ctx->msg_mutex);
     for (i = 0; i < MAX_TIMERS; i++) {
         if (t_info[i].hz != 0) {
             fwlog (LOG_INFO, "Stoping timer thread %d\n", i);
-            pthread_cancel(timers[i]);
+            //pthread_cancel(timers[i]);
             pthread_join(timers[i], NULL);
             memset(&t_info[i],0, sizeof (t_info[i]));
             memset(&timers[i],0, sizeof (timers[i]));
         }
     }
+    // unlocking here after (hopefully) all pending timers are gone
+    pthread_mutex_unlock(&ctx->msg_mutex);
+
     fwlog (LOG_DEBUG_MORE, "Done\n");
 }
 
@@ -102,6 +123,10 @@ static void *timers_main(void *p) {
 
     pthread_mutex_unlock(&ctx->startup_mutex);
 
+    //NOTE: if logging is required between this point and there msg_mutex is unlocked (a few lines below).
+    //It is required to use fwl_no_emit(), as regular logging will also emit a message, which will try to obtain
+    //same message mutex resulting in a deadlock!
+    //
     pthread_mutex_lock(&ctx->msg_mutex);
     while (break_requested == 0) {
         if (first_entry) {
@@ -120,7 +145,7 @@ static void *timers_main(void *p) {
 
         pthread_mutex_unlock(&ctx->msg_mutex);
         do {
-            fwlog (LOG_DEBUG_MORE, "%s: Timed Work\n", ctx->name);                  // do some work...
+            fwl (LOG_DEBUG_MORE, p, "%s: Timed Work\n", ctx->name);                  // do some work...
 
             rdb_lock(ctx->msg_q_pool,__FUNCTION__);
             q = rdb_delete(ctx->msg_q_pool, 0, NULL);
@@ -129,26 +154,26 @@ static void *timers_main(void *p) {
             if (q) {    // process message
                 fwlog (LOG_DEBUG_MORE, "%s: Received message grp.id = %d.%d\n",
                         ctx->name, q->msg.group, q->msg.id);
-                if (q->msg.id == RDBMSG_ID_TIMER_STOP) {
-                    timer_id = q->msg.len - RDBMSG_ID_TIMER_TICK_0;
-                    pthread_cancel(timers[timer_id]);
+                if (q->msg.id == timer_stop_id) {
+                    timer_id = q->msg.len - timer_tick[0];
+                    t_info[timer_id].stop = 1;//pthread_cancel(timers[timer_id]);
                     pthread_join(timers[timer_id], NULL);
                     memset(&t_info[timer_id],0, sizeof (t_info[timer_id]));
                     memset(&timers[timer_id],0, sizeof (timers[timer_id]));
                 }
-                if (q->msg.id == RDBMSG_ID_TIMER_START) {
+                if (q->msg.id == timer_start_id) {
                     timer_id = find_free_timer();
                     // we reply to the request before starting the timer, so receiver has a change to set up listener before ticks accomulate
-                    rdbmsg_emit_simple(RDBMSG_ROUTE_MDL_TIMERS, 
+                    rdbmsg_emit_simple(timer_route, 
                             q->msg.from,    // replying directly to the requester
-                            RDBMSG_GROUP_TIMERS,
-                            RDBMSG_ID_TIMER_ACK,
+                            timer_group,
+                            timer_ack_id,
                             timer_id);
                     if (timer_id != -1) {   // we got a timer
                         int rc;
                         int cnt = 0;
                         t_info[timer_id].hz = q->msg.len;
-                        t_info[timer_id].id = timer_id + RDBMSG_ID_TIMER_TICK_0;
+                        t_info[timer_id].id = timer_id + timer_tick[0];
                         while (1) {
                             rc = pthread_create( &timers[timer_id], &attr, timer_thread, (void *)&t_info[timer_id]);
                             if (rc == 0) {
@@ -177,7 +202,7 @@ static void *timers_main(void *p) {
                         }
                     }                    
                 }
-                rdbmsg_free(ctx, q);
+                rdbmsg_implode(ctx, q);
             } else {
                 break;
             }
@@ -190,6 +215,38 @@ static void *timers_main(void *p) {
     pthread_exit(NULL);
 }
 
+
+static void timers_pre_init(void *p) {
+    char *str;
+    int i;
+    str = malloc(64);
+
+    timer_route = rdbmsg_register_msg_type ( "route", "ROUTE_MDL_TIMERS" );
+    timer_group = rdbmsg_register_msg_type ( "group", "GROUP_TIMERS" );
+    timer_start_id = rdbmsg_register_msg_type ( "id", "ID_TIMER_START" );
+    timer_stop_id = rdbmsg_register_msg_type ( "id", "ID_TIMER_STOP" );
+    timer_ack_id = rdbmsg_register_msg_type ( "id", "ID_TIMER_ACK" );
+    for (i = 0; i < MAX_TIMERS; i++) {
+        sprintf ( str, "ID_TIMER_TICK_%d",i);
+        timer_tick[i] = rdbmsg_register_msg_type ( "id", str );
+        if ( timer_tick[i] < 0 ) {
+            fwl (LOG_ERROR, p, "Unable to register message %s\n", str);
+            exit (1);
+        }
+    }
+    free (str);
+
+    if ( timer_route < 0 || timer_group < 0 || timer_start_id < 0 ||
+            timer_stop_id < 0 || timer_ack_id < 0 ) {
+        fwl (LOG_ERROR, p, "Unable to register message(s)\n");
+        exit (1);
+    }
+    else {
+        fwl (LOG_INFO, p, "register message(s) successfully\n");
+    }
+
+}
+
 static void timers_init(void *p) {
     ctx = p;
 
@@ -197,17 +254,21 @@ static void timers_init(void *p) {
 //    pthread_cond_init(&ctx->msg_condition, NULL);
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-    ctx->state = RDBFW_STATE_INITILIZED;
+    ctx->state = RDBFW_STATE_INITIALIZED;
 
-    if (0 != rdbmsg_request(p, RDBMSG_ROUTE_NA, RDBMSG_ROUTE_MDL_TIMERS, RDBMSG_GROUP_NA, RDBMSG_ID_TIMER_START)) {
+    if (0 != rdbmsg_request(p, rdbmsg_lookup_id ("ROUTE_NA"), timer_route,
+                rdbmsg_lookup_id ("GROUP_NA"), timer_start_id)) {
         fwlog (LOG_ERROR, "rdbmsg_request failed. events may not fire. Aborting (%d.%d.%d.%d)",
-                RDBMSG_ROUTE_NA, RDBMSG_ROUTE_MDL_TIMERS, RDBMSG_GROUP_NA, RDBMSG_ID_TIMER_START);
+                rdbmsg_lookup_id ("ROUTE_NA"), timer_route, 
+                rdbmsg_lookup_id ("GROUP_NA"), timer_start_id);
         ctx->state = RDBFW_STATE_STOPALL;
         return;
     }
-    if (0 != rdbmsg_request(p, RDBMSG_ROUTE_NA, RDBMSG_ROUTE_MDL_TIMERS, RDBMSG_GROUP_NA, RDBMSG_ID_TIMER_STOP)) {
+    if (0 != rdbmsg_request(p, rdbmsg_lookup_id ("ROUTE_NA"), timer_route,
+                rdbmsg_lookup_id ("GROUP_NA"), timer_stop_id)) {
         fwlog (LOG_ERROR, "rdbmsg_request failed. events may not fire. Aborting (%d.%d.%d.%d)",
-                RDBMSG_ROUTE_NA, RDBMSG_ROUTE_MDL_TIMERS, RDBMSG_GROUP_NA, RDBMSG_ID_TIMER_STOP);
+                rdbmsg_lookup_id ("ROUTE_NA"), timer_route, 
+                rdbmsg_lookup_id ("GROUP_NA"), timer_stop_id);
         ctx->state = RDBFW_STATE_STOPALL;
         return;
     }
@@ -217,6 +278,7 @@ static void timers_init(void *p) {
 static void timers_de_init(void *p) {
     ctx = p;
     
+    fwlog (LOG_INFO, "Destroy %s\n", ctx->uname);
     ctx->state = RDBFW_STATE_LOADED;
     
 
@@ -224,8 +286,8 @@ static void timers_de_init(void *p) {
 }
 
 static void timers_stop(void *P) {
-    break_requested = 1;
     
+    break_requested = 1;
     // even though we set break_requested to one we also need to
     // make sure it's awake after that moment, to it can be processed.
     // the join will ensure we dont quit until out internal threads did.
@@ -290,12 +352,16 @@ static void *timer_thread(void *p)
     struct timespec tv, tnext, tnow;
     int rc;
     int64_t sleep_time = 0;
+    int route_na = rdbmsg_lookup_id ("ROUTE_NA");
     
+#ifdef USE_PRCTL
+    prctl(PR_SET_NAME,"timers_slave\0",NULL,NULL,NULL);
+#endif
     fwlog (LOG_INFO, "Starting timer thread @ %dHz\n",t_info->hz);
 
     clock_gettime(CLOCK_REALTIME, &tnext);
 
-    while (!break_requested) {
+    while (!break_requested && !t_info->stop) {
         clock_gettime(CLOCK_REALTIME, &tnow);
         tnext.tv_nsec += 1000000000 / t_info->hz;
         if (tnext.tv_nsec >= 1000000000) {
@@ -315,10 +381,10 @@ static void *timer_thread(void *p)
         tv.tv_nsec = s_ts_diff_time_ns(&tnow, &tnext, NULL);
         if (tv.tv_nsec < 0) { 
             // we aer late, no delay needed
-            fwlog (LOG_WARN, "Timer late - skipping sleep\n");
+            ////fwlog (LOG_WARN, "Timer late - skipping sleep\n");
         }
         else {
-            fwlog (LOG_TRACE, "Timer sleep %ld\n", tv.tv_nsec);
+            ////fwlog (LOG_TRACE, "Timer sleep %ld\n", tv.tv_nsec);
             while (tv.tv_nsec >= 1000000000) {
                 tv.tv_nsec -= 1000000000;
                 tv.tv_sec ++;
@@ -330,23 +396,26 @@ static void *timer_thread(void *p)
             }
         }
         // we do NOT want to emit if we are canceled 
-        pthread_testcancel();
-        fwlog(LOG_TRACE, "CORE_EMIT\n");
-        rdbmsg_emit_simple(RDBMSG_ROUTE_NA, 
-                RDBMSG_ROUTE_NA,
-                RDBMSG_GROUP_TIMERS,
+        //if (break_requested) break;
+        //pthread_testcancel();
+        //fwlog_no_emit(LOG_WARN, "CORE_EMIT\n");
+        rdbmsg_emit_simple(route_na, 
+                route_na,
+                timer_group,
                 t_info->id,
                 t_info->counter++);
 
         if (t_info->counter>=1000) {
             t_info->counter=0;
         }
+    //pthread_exit(NULL); 
     }
 
     pthread_exit(NULL); 
 }
 
 const rdbfw_plugin_api_t timers_rdbfw_fns = {
+    .pre_init = timers_pre_init,
     .init = timers_init,
     .de_init = timers_de_init,
     .start = timers_start,

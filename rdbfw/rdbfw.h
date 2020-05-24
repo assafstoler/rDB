@@ -1,3 +1,7 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 
 #ifndef __RDBFW_H
 #define __RDBFW_H
@@ -17,7 +21,7 @@
  *   stop: signal module to go idle (only respond to framework / inquery messages
  * 
  *   NOTE: when a module is stopped, and started, it will retain it's state. this menns 
- * INITILIZED state equals (STOPPED with all default values).
+ * INITIALIZED state equals (STOPPED with all default values).
  * going from STOPPED to RUNNING must be supported. as well as re-init to start
  * fread.
  *
@@ -44,9 +48,32 @@
  *
  *   Modules may or may not be unloaded from the FW after a de_init call. 
  ***/
+#include <stdio.h>
 #include "rDB.h"
 
+// Used by moduels which can only load once
+static const uint64_t CTX_SINGULAR = 0;
+
+// Used by moduels which can dynamically multiply
+static const uint64_t CTX_DYNAMIC = 0xFFFFFFFFFFFFFFFF;
+
+// User Contexes - where more then one invication of a plugin is supported
+static const uint64_t CTX_SERVER = ( 1 << 0 );
+static const uint64_t CTX_CLIENT = ( 1 << 1 );
+
 #define MAX_THREAD_RETRY 10
+
+// suffix used in plugins for dlsym() benefit
+// expecting module-name_suffix
+#define PLUGINS_SUFFIX "_rdbfw_fns"
+
+#define TIME_BUF_MAXLEN 32
+
+extern char out_path[255];
+extern FILE *logger;
+extern int unittest_en;
+
+static const int NAME_EXTRA_LEN = 11; //10 byte context ID + null
 
 typedef struct rdbfw_plugin_api_s {
     void (*init)(void *);                // Initilize the module, if requited (allocation, zero of pointers)
@@ -56,16 +83,19 @@ typedef struct rdbfw_plugin_api_s {
     void (*de_init)(void *);
     void (*msg_pending)(void *);
     void (*last_gasp)(void *);
-    void (*last_gast_delete)(void *);
+    void (*last_gasp_delete)(void *);
     void (*capabilities)(void *);
     void (*state)(void *);
+    void (*signal)(void *);
+    void (*opt_help)(void *);
+    void (*pre_init)(void *);           // set uo stuff like set friendly name, etc
 } rdbfw_plugin_api_t;
 
 typedef enum {
     RDBFW_STATE_NULL=0,
     RDBFW_STATE_LOADED,
-    RDBFW_STATE_INITILIZING, // not sure about the ING entries, may not be used / removed
-    RDBFW_STATE_INITILIZED,
+    RDBFW_STATE_INITIALIZING, // not sure about the ING entries, may not be used / removed
+    RDBFW_STATE_INITIALIZED,
     RDBFW_STATE_RUNNING,
     RDBFW_STATE_GASPING,
     RDBFW_STATE_STOPPING,
@@ -76,7 +106,9 @@ typedef enum {
 
 typedef struct plugins_s {
     rdb_bpp_t               pp[1]; // Required for rDB unmanaged tree with two indexes
-    char                    *name;
+    char                    *uname; // unique name - 
+    char                    *name; // non-unique - used for plugin loading / file finding
+    char                    *friendly_name;
     char                    *pathname;
     rdbfw_plugin_api_t      *plugin_info;
     rdbfw_plugin_state_e    state;
@@ -97,6 +129,12 @@ typedef struct plugins_s {
 #ifdef WAKEUP_ACCOUNTING
     uint64_t                wakeup_count;
 #endif
+    void                    *ctx;           // user context pointer
+    uint64_t                ctx_id;         // unique # associated with 'this' context's job
+    int                     sig_id;         // signal (only set for signal() fn)
+    int                     argc;
+    char                    **argv;
+
 } plugins_t;
 
 extern uint64_t wake_count_limit;
@@ -107,4 +145,61 @@ extern uint64_t wake_count_limit;
 int rdbfw_main(int argc, char *argv[]);
 #endif
 
+int register_plugin(
+        char *name, 
+        rdb_pool_t *plugin_pool,
+ //       plugins_t *plugin_node,
+        int msg_slots,
+        uint32_t req_ctx_id
+        /*int argc,
+        char **argv*/);
+
+void rdbfw_handle_fatal_error(void);
+void rdbfw_app_help(void);
+int rdbfw_app_process_opts (int argc, char **argcv);
+int rdbfw_app_prealloc ( void );
+int rdbfw_app_register_plugins ( rdb_pool_t *plugin_pool /*int, char***/ );
+void rdbfw_app_config_timers ( void );
+void rdbfw_update_state (plugins_t *ctx, rdbfw_plugin_state_e state);
+int rdbfw_is_running (void);
+int rdbfw_stop (void);
+int rdbfw_wait (void);
+
+extern rdb_pool_t *plugin_pool;
+//extern plugins_t *plugin_node;
+extern const char rdbfw_app_name[];
+
+extern uint32_t log_level;
+extern pthread_mutex_t  log_mutex;
+
+// UNITTEST Test definitiond
+
+#define UT_MSG_INIT_1 1
+#define UT_MSG_INIT_2 2
+#define UT_MSG_INIT_3 3
+
+#define UT_ALLOC_INIT_1 10
+#define UT_ALLOC_INIT_2 11
+
+#define UT_ALLOC_PRE_1 20
+#define UT_ALLOC_PRE_2 21
+#define UT_ALLOC_PRE_3 22
+#define UT_ALLOC_PRE_4 23
+#define UT_ALLOC_PRE_5 24
+#define UT_ALLOC_PRE_6 25
+#define UT_ALLOC_PRE_7 26
+#define UT_ALLOC_PRE_8 27
+
+#define UT_REG_PLUGIN_1 30
+#define UT_REG_PLUGIN_2 31
+#define UT_LOAD_PLUGIN_1 32
+#define UT_LOAD_PLUGIN_2 33
+#define UT_LOAD_PLUGIN_3 34
+
+#define UT_ARGS_1 40
+#define UT_ARGS_2 41
+
+#define UT_INIT_1 50
+
+// test 
 #endif

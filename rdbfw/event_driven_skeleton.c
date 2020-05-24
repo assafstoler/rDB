@@ -1,3 +1,7 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -14,14 +18,23 @@
 #ifdef USE_PRCTL
 #include <sys/prctl.h>
 #endif
-    
+
 static pthread_t skel_event_thread;
 static pthread_attr_t attr;
     
 static plugins_t *ctx;
 static int break_requested = 0;
+static int skeleton_main_thread_started = 0;
 
-struct timespec ts[3];
+//cache needed messaging id's
+static int timer_ack_id;
+static int timer_id;
+static int route_timers;
+static int route_skel;
+static int group_timers;
+//test
+static int group_skel;
+
 
 static void *skel_event(void *p) {
     rdbmsg_msg_t *msg;
@@ -35,6 +48,10 @@ static void *skel_event(void *p) {
 
     pthread_mutex_unlock(&ctx->startup_mutex);
 
+    //NOTE: if logging is required between this point and there msg_mutex is unlocked (a few lines below).
+    //It is required to use fwl_no_emit(), as regular logging will also emit a message, which will try to obtain
+    //same message mutex resulting in a deadlock!
+    //
     pthread_mutex_lock(&ctx->msg_mutex);
     while (break_requested == 0) {
         if (first_entry) {
@@ -50,11 +67,12 @@ static void *skel_event(void *p) {
 #endif
         }
 
+        pthread_mutex_unlock(&ctx->msg_mutex);
+
         if (ctx->msg_pending_count > 1) {
-            printf("skel_event_woken_up (%d)\n",ctx->msg_pending_count);                  // do some work...
+            fwl(LOG_WARN, p, "skel_event_woken_up (%d)\n",ctx->msg_pending_count);                  // do some work...
         }
 
-        pthread_mutex_unlock(&ctx->msg_mutex);
         do {
             rdb_lock(ctx->msg_q_pool,__FUNCTION__);
             q = rdb_delete(ctx->msg_q_pool, 0, NULL);
@@ -62,19 +80,32 @@ static void *skel_event(void *p) {
             if (q) {
 
                 msg=&(q->msg);
-                //info("SKEL: from %d to %d grp %d ID %d val %d\n",msg->from, msg->to, msg->group, msg->id, msg->len);
-                if (msg->id ==  RDBMSG_ID_TIMER_ACK) {
+                fwl(LOG_DEBUG, p, "SKEL: from %s to %s grp %s ID %s val %d\n",
+                        rdbmsg_lookup_string ( msg->from ),
+                        rdbmsg_lookup_string ( msg->to ),
+                        rdbmsg_lookup_string ( msg->group ),
+                        rdbmsg_lookup_string ( msg->id ),
+                        msg->len);
+                if (msg->id == timer_ack_id) {
                     // now ask to receive (in addition) messages for assigned timer    
-                    if (0 != rdbmsg_request(ctx, RDBMSG_ROUTE_NA, RDBMSG_ROUTE_NA, RDBMSG_GROUP_TIMERS, RDBMSG_ID_TIMER_TICK_0 + msg->len)) {
+                    timer_id = rdbmsg_lookup_id ("ID_TIMER_TICK_0") + msg->len;
+                    if (0 != rdbmsg_request(ctx,
+					    rdbmsg_lookup_id("ROUTE_MDL_TIMERS"),
+					    route_skel,
+					    rdbmsg_lookup_id ("GROUP_TIMERS"),
+                        timer_id)) {
                         fwlog (LOG_ERROR, "rdbmsg_request failed. events may not fire. Aborting");
                         ctx->state = RDBFW_STATE_SOFTSTOPALL;
                     }
-                    else {
-                        fwlog (LOG_INFO, "got timer id %d\n",msg->len);
-                    }
+                }
+                else if (msg->id == timer_id) {
+                    fwl (LOG_INFO, p, "got timer id %d\n",msg->len);
+                }
+                else {
+                    fwl (LOG_INFO, p, "UNEXPECTED MESSAGE: %s\n",rdbmsg_lookup_string ( msg->id ) );
                 }
                 
-                rdbmsg_free(ctx, q);                
+                rdbmsg_implode(ctx, q);
                 //info("free\n");
             }
             //if (q == NULL) printf("got empty message - sperious\n");
@@ -97,10 +128,25 @@ static void skel_event_destroy(void *p) {
 
 }
 
+static void skel_event_pre_init(void *p) {
+    route_skel = rdbmsg_register_msg_type ( "route", "ROUTE_MDL_EVENT_SKEL" );
+    group_skel = rdbmsg_register_msg_type ( "group", "GROUP_SKEL" );
+    if ( route_skel < 0 || group_skel < 0 ) {
+        fwl ( LOG_FATAL, p, "Unable to register route, or group message: %d:%d",
+           route_skel, group_skel );
+        ((plugins_t*) p)->state = RDBFW_STATE_STOPALL;
+    }
+    fwl (LOG_INFO, p, "route_skel = %d\n", route_skel); 
+}
+
 static void skel_event_init(void *p) {
     ctx = p;
     
     fwlog (LOG_INFO, "Initilizing %s\n", ctx->name);
+
+    timer_ack_id = rdbmsg_lookup_id ("ID_TIMER_ACK");
+    route_timers = rdbmsg_lookup_id ("ROUTE_MDL_TIMERS");
+    group_timers = rdbmsg_lookup_id ("GROUP_TIMERS");
 
     pthread_mutex_init(&ctx->msg_mutex, NULL);
     pthread_cond_init(&ctx->msg_condition, NULL);
@@ -108,13 +154,14 @@ static void skel_event_init(void *p) {
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
  
     // ask to receive messages of type... Timers Ack.    
-    if (0 != rdbmsg_request(p, RDBMSG_ROUTE_NA, RDBMSG_ROUTE_MDL_EVENT_SKEL, RDBMSG_GROUP_TIMERS, RDBMSG_ID_TIMER_ACK)) {
+    if (0 != rdbmsg_request(p, route_timers, route_skel, rdbmsg_lookup_id ("GROUP_TIMERS"), 
+                rdbmsg_lookup_id ("ID_TIMER_ACK") ) ) {
         fwlog (LOG_ERROR, "rdbmsg_request failed. events may not fire. Aborting");
         ctx->state = RDBFW_STATE_STOPALL;
         return;
     }
     
-    ctx->state = RDBFW_STATE_INITILIZED;
+    ctx->state = RDBFW_STATE_INITIALIZED;
 
 }
 
@@ -152,39 +199,40 @@ static void skel_event_start(void *p) {
             return;
         }
     }
+    skeleton_main_thread_started = 1;
    
-    
     pthread_mutex_lock(&ctx->startup_mutex);
     ctx->state = RDBFW_STATE_RUNNING;
     pthread_mutex_unlock(&ctx->startup_mutex);
 
-    rdbmsg_emit_simple(RDBMSG_ROUTE_MDL_EVENT_SKEL,
-                RDBMSG_ROUTE_MDL_TIMERS,
-                RDBMSG_GROUP_TIMERS,
-                RDBMSG_ID_TIMER_START,
-                100); //Hz
-    /*rdbmsg_emit_simple(RDBMSG_ROUTE_MDL_EVENT_SKEL,
-                RDBMSG_ROUTE_MDL_TIMERS,
-                RDBMSG_GROUP_TIMERS,
-                RDBMSG_ID_TIMER_START,
-                10 ); */
+    rdbmsg_emit_simple(route_skel,
+                rdbmsg_lookup_id ("ROUTE_MDL_TIMERS"),
+                rdbmsg_lookup_id ("GROUP_TIMERS"),
+                rdbmsg_lookup_id ("ID_TIMER_START"),
+                2000 );
 }
 
-static void skel_event_stop(void *p) {
+static void skel_event_stop(void *pp) {
+    plugins_t *p = pp;
     break_requested = 1;
 
+    fwl (LOG_WARN, p, "Stopping %s\n",p->uname);
+    
     // even though we set break_requested to one we also need to
     // make sure it's awake after that moment, to it can be processed.
     // the join will ensure we dont quit until out internal threads did.
-    pthread_mutex_lock(&ctx->msg_mutex);
-    pthread_cond_signal(&ctx->msg_condition);
-    pthread_mutex_unlock(&ctx->msg_mutex);
-    pthread_join(skel_event_thread, NULL);
+    if ( skeleton_main_thread_started ) {
+        pthread_mutex_lock(&ctx->msg_mutex);
+        pthread_cond_signal(&ctx->msg_condition);
+        pthread_mutex_unlock(&ctx->msg_mutex);
+        pthread_join(skel_event_thread, NULL);
+    }
 
     ctx->state = RDBFW_STATE_STOPPED;
 }
 
 const rdbfw_plugin_api_t event_skeleton_rdbfw_fns = {
+    .pre_init = skel_event_pre_init,
     .init = skel_event_init,
     .start = skel_event_start,
     .stop = skel_event_stop,

@@ -1,3 +1,7 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -66,7 +70,7 @@ static void skeleton_init(void *p) {
     pthread_cond_init(&ctx->msg_condition, NULL);
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-    ctx->state = RDBFW_STATE_INITILIZED;
+    ctx->state = RDBFW_STATE_INITIALIZED;
 
 }
 

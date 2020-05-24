@@ -1,3 +1,7 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 /*
  * @file rDB.c
  *
@@ -62,8 +66,8 @@
 #define __intmax_t __int128_t
 #define __uintmax_t __uint128_t
 #else 
-#define __intmax_t __int64_t
-#define __uintmax_t __uint64_t
+#define __intmax_t int64_t
+#define __uintmax_t uint64_t
 #endif
 
 /*typedef struct RDB_INDEX_DATA {
@@ -206,6 +210,7 @@ char * rdb_print_pool_stats (char *buf, int max_len)
                 used += rc;
             } 
             else {
+                rdb_error("Failure during error print\n");
                 break;
             }
 
@@ -466,6 +471,8 @@ void rdb_clean(int gc) {
         rdb_free (rdb_error_string);
         rdb_error_string = NULL;
     }
+
+    pool_root = NULL;
 
     return ;
 }
@@ -781,14 +788,10 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
             _rdb_dump (pool, index, separator, pp->left);
             levels--;
         }
-        void *ppp;
+
         switch (pool->FLAGS[index] & RDB_KEYS) {
             case RDB_KPTR:
-                ppp= key->pStr;
                 c_info ("%p%s", (void *) key->pStr, separator);
-                /*c_info ("(%p%s:%p)", (void *) &(key->pStr), separator,key->pStr);
-                c_info ("[%p-%p%s]", (void *) ppp, &ppp, separator);*/
-                //c_info ("[%p-%p%s]", (void *) key->pStr, &ppp, separator);
                 break;
 
             case RDB_KPSTR:
@@ -1249,7 +1252,6 @@ int rdb_insert (rdb_pool_t *pool, void *data)
         for (indexCount = 0; indexCount < pool->indexCount; indexCount++) {
             (_rdb_insert (pool, data, pool->root[indexCount], 
                 indexCount, NULL, 0) < 0) ? rc : rc++;
-            //printf("%d %d\n", rc, indexCount);
 
             if ( rc <= indexCount ) {
                 //TODO: NOW!: finish partial delete
@@ -1783,7 +1785,7 @@ void rdb_iterate(
     }
 
     if (pool->root[index] == NULL) {
-        return rdb_error("iterate called with no pool->root");
+        return;	    // no data is not an error
     }
 
     if ((pool->FLAGS[index] & RDB_BTREE) == 0) {
@@ -1804,11 +1806,9 @@ void rdb_iterate(
             rc = _rdb_iterate_list (pool, index, fn, fn_data, del_fn, del_data,
                                 pool->root[index], NULL, 0, &resumePtr);
         }
-	    debug("rc=**%d %p\n",rc, resumePtr);
+	    debug("rc=%d %p\n",rc, resumePtr);
     } while (rc != 0 && ( rc & RDBFE_ABORT ) != RDBFE_ABORT && 
                                                     resumePtr != NULL);
-    debug("rc = %d\n", rc);
-    debug("rcp = %p\n", resumePtr);
 }
 
 void _rdb_flush( 
@@ -2396,7 +2396,7 @@ void   *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value)
     return rdb_delete (pool, idx, &value); //, NULL, 0);
 }
 
-// TODO, make sure rdv_delete works well on trees with both indexed and non-indexed 
+// TODO, make sure rdb_delete works well on trees with both indexed and non-indexed 
 // indexes. ( is that a valid configuration? )
 //
 void   *
@@ -2484,6 +2484,16 @@ void *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data)
     ptr = rdb_delete (src_pool, idx, data);
     if (ptr && rdb_insert (dst_pool, ptr)) return ptr;
     return 0;
+}
+
+// same but slower, with mode debug (not returning a pointer to data)
+int rdb_move2 (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data) {
+    void *ptr;
+    if ((ptr = rdb_delete (src_pool, idx, data))) {
+        if ( dst_pool->indexCount == rdb_insert (dst_pool, ptr)) return 0;
+        return -2;
+    }
+    return -1;
 }
 
 #ifdef KM

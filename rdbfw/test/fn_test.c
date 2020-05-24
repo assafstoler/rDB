@@ -1,3 +1,7 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 #include <stdio.h>  //printf,
 #include <stdlib.h> //exit,
 #include <string.h>

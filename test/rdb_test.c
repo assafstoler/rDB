@@ -1,3 +1,7 @@
+//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
+//All rights reserved.
+//see LICENSE for more info
+
 #include <stdio.h>  //printf,
 #include <stdlib.h> //exit,
 #include <string.h>
@@ -1030,10 +1034,10 @@ int main(int argc, char *argv[]) {
         // testing get_neight with Pointers 
         ptd = rdb_get_const (pool1, 2, 5);
         //info ("Address of %u if %p\n",ptd->ui32, ptd->string_ptr);
-        void *get_ptr, *p2; // , *p1;
+        void /**get_ptr,*/ *p2; // , *p1;
         test_data_t *b, *a, *n, *ptd2;
         b = a = n = NULL;
-        get_ptr = ptd->string_ptr;
+        //get_ptr = ptd->string_ptr;
         //ptd = rdb_get_const (pool2, IDX_KPTR, get_ptr);
         ptd2 = rdb_get_const (pool1, 2, 11);
         p2 = ptd->string_ptr;
