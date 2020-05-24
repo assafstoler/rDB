@@ -4,6 +4,7 @@
 #ifndef KM
 #include <sys/time.h>
 #include <stdint.h>
+#include <stddef.h>
 #else
 #include <linux/types.h>
 #endif
@@ -127,8 +128,8 @@ extern "C" {
 #define __intmax_t int64_t
 #define __uintmax_t uint64_t
 #else
-#define __intmax_t __int64_t
-#define __uintmax_t __uint64_t
+#define __intmax_t int64_t
+#define __uintmax_t uint64_t
 #endif
 #endif
 

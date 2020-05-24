@@ -62,8 +62,8 @@
 #define __intmax_t __int128_t
 #define __uintmax_t __uint128_t
 #else 
-#define __intmax_t __int64_t
-#define __uintmax_t __uint64_t
+#define __intmax_t int64_t
+#define __uintmax_t uint64_t
 #endif
 
 /*typedef struct RDB_INDEX_DATA {
