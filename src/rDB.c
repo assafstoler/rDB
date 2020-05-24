@@ -1781,7 +1781,7 @@ void rdb_iterate(
     }
 
     if (pool->root[index] == NULL) {
-        return rdb_error("iterate called with no pool->root");
+        return;	    // no data is not an error
     }
 
     if ((pool->FLAGS[index] & RDB_BTREE) == 0) {
