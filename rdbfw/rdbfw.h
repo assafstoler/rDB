@@ -49,7 +49,7 @@
  *   Modules may or may not be unloaded from the FW after a de_init call. 
  ***/
 #include <stdio.h>
-#include "rDB.h"
+#include <rdb/rDB.h>
 
 // Used by moduels which can only load once
 static const uint64_t CTX_SINGULAR = 0;
@@ -122,13 +122,13 @@ typedef struct plugins_s {
     pthread_mutex_t         msg_mutex;
     pthread_mutex_t         startup_mutex;
     pthread_cond_t          msg_condition;
-#ifdef MSG_ACCOUNTING
+//#ifdef MSG_ACCOUNTING
     uint64_t                msg_rx_count;
     uint64_t                msg_tx_count;
-#endif
-#ifdef WAKEUP_ACCOUNTING
+//#endif
+//#ifdef WAKEUP_ACCOUNTING
     uint64_t                wakeup_count;
-#endif
+//#endif
     void                    *ctx;           // user context pointer
     uint64_t                ctx_id;         // unique # associated with 'this' context's job
     int                     sig_id;         // signal (only set for signal() fn)

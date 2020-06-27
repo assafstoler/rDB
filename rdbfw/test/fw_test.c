@@ -117,8 +117,9 @@ int main(int argc, char *argv[]) {
         printf("Fatal: Error loading framework - Abort\n");
         exit(1);
     }
+    sleep(1);
     printf("is running %d\n", rdbfw_is_running());
-    rdbfw_wait();
+    rdbfw_stop();
 
     printf("is running %d\n", rdbfw_is_running());
 
