@@ -109,7 +109,7 @@ static void help_and_exit(rdb_pool_t *plugin_pool)
     rdbfw_app_help();
     
     printf( "[--module [options]]\n" );
-    rdb_iterate(plugin_pool,  0, help_cb, NULL, NULL, NULL); 
+    rdb_iterate(plugin_pool,  1, help_cb, NULL, NULL, NULL); 
 }
 
 /* This callback is called on for every module listed in the
@@ -345,10 +345,10 @@ static int stop_unittest_plugin_cb (void *data, void *user_ptr) {
     plugins_t *p;
     p = (plugins_t *) data;
 
+    if (strstr(p->name, "unittest") == NULL) {
+        return RDB_CB_OK;
+    } 
     if (p->state == RDBFW_STATE_RUNNING || p->state == RDBFW_STATE_SOFTSTOPALL) {
-        if (strstr(p->name, "unittest") == NULL) {
-           return RDB_CB_OK;
-        } 
         fwl (LOG_INFO, p, "stopping %s\n", p->name);
         if ((*p->plugin_info).stop)  (*p->plugin_info).stop(p);
         pthread_mutex_lock(&p->msg_mutex);
@@ -369,13 +369,13 @@ static int stop_timers_plugin_cb (void *data, void *user_ptr) {
     plugins_t *p;
     p = (plugins_t *) data;
 
+    if (strstr(p->name, "timers") == NULL) {
+        return RDB_CB_OK;
+    } 
     if (p->state == RDBFW_STATE_RUNNING || p->state == RDBFW_STATE_SOFTSTOPALL) {
         // this one only does timers.
         // NOTE: it may be timers.c or hw_timers.c or ios_timers or alike. watch not to
         //       name other modules with the string "timers", or change this code.
-        if (strstr(p->name, "timers") == NULL) {
-           return RDB_CB_OK;
-        } 
         fwl (LOG_INFO, p, "stopping %s\n", p->name);
         //p->state = RDBFW_STATE_STOPPING;
         if ((*p->plugin_info).stop)  (*p->plugin_info).stop(p);
@@ -398,14 +398,14 @@ static int stop_plugin_cb (void *data, void *user_ptr) {
     plugins_t *p;
     p = (plugins_t *) data;
 
+    if (strstr(p->name, "timers") != NULL) {
+        return RDB_CB_OK;
+    } 
+    if (strstr(p->name, "unittest") != NULL) {
+        return RDB_CB_OK;
+    } 
     if (p->state == RDBFW_STATE_RUNNING || p->state == RDBFW_STATE_SOFTSTOPALL) {
         // all others
-        if (strstr(p->name, "timers") != NULL) {
-           return RDB_CB_OK;
-        } 
-        if (strstr(p->name, "unittest") != NULL) {
-           return RDB_CB_OK;
-        } 
         fwl (LOG_INFO, p, "stopping %s\n", p->name);
         //p->state = RDBFW_STATE_STOPPING;
         if ((*p->plugin_info).stop)  (*p->plugin_info).stop(p);
@@ -419,7 +419,7 @@ static int stop_plugin_cb (void *data, void *user_ptr) {
         return RDB_CB_OK;
     }
     else {
-        fwl (LOG_DEBUG, p, "NOT stopping %s\n", p->name);
+        fwl (LOG_DEBUG, p, "NOT stopping %s as it's not in running state\n", p->name);
     }
     return RDB_CB_OK;
 }
@@ -451,13 +451,13 @@ static int any_running_cb (void *data, void *user_ptr) {
 
 static int stopall_requested(rdb_pool_t *plugin_pool) {
         int any_running=0;
-        rdb_iterate(plugin_pool,  0, any_running_cb, (void *) &any_running, NULL, NULL); 
+        rdb_iterate(plugin_pool,  1, any_running_cb, (void *) &any_running, NULL, NULL); 
         if (any_running & MARK_TASK_STOPALL) return 1;
         return 0;
 }
 static int running(rdb_pool_t *plugin_pool) {
         int any_running=0;
-        rdb_iterate(plugin_pool,  0, any_running_cb, (void *) &any_running, NULL, NULL); 
+        rdb_iterate(plugin_pool,  1, any_running_cb, (void *) &any_running, NULL, NULL); 
         if (any_running & MARK_TASK_RUNNING) return 1;
         return 0;
 }
@@ -878,7 +878,7 @@ void *rdbfw_main_loop (void *plugin_pool) {
         }
 
         if (signal_trapped) {
-            rdb_iterate(plugin_pool,  0, relay_signal_cb, NULL, NULL, NULL); 
+            rdb_iterate(plugin_pool,  1, relay_signal_cb, NULL, NULL, NULL); 
             signal_trapped = 0;
             if (! break_requested) {
                 continue;
@@ -888,17 +888,18 @@ void *rdbfw_main_loop (void *plugin_pool) {
         if (log_level >= LOG_DEBUG) {
             fwl (LOG_DEBUG, NULL, "Pool status dump - pre-shutdown\n");
             rdb_print_pool_stats(sbuf,8096);
+            fprintf(stderr,"%s\n",sbuf);
         }
         sbuf[0]=0;
 
         fwl (LOG_INFO, NULL, "SHUTDOWN started\n");
-        rdb_iterate(plugin_pool,  0, stop_timers_plugin_cb, NULL, NULL, NULL); 
+        rdb_iterate(plugin_pool,  2, stop_timers_plugin_cb, NULL, NULL, NULL); 
         fwl (LOG_INFO, NULL, "Timers halted\n");
-        rdb_iterate(plugin_pool,  0, stop_plugin_cb, NULL, NULL, NULL); 
+        rdb_iterate(plugin_pool,  2, stop_plugin_cb, NULL, NULL, NULL); 
         fwl (LOG_INFO, NULL, "Plugins halted.\n");
-        rdb_iterate(plugin_pool,  0, stop_unittest_plugin_cb, NULL, NULL, NULL); 
+        rdb_iterate(plugin_pool,  2, stop_unittest_plugin_cb, NULL, NULL, NULL); 
         fwl (LOG_INFO, NULL, "unittest Plugins halted.\n");
-        rdb_iterate(plugin_pool,  0, display_run_state_cb, NULL, NULL, NULL); 
+        rdb_iterate(plugin_pool,  1, display_run_state_cb, NULL, NULL, NULL); 
         break;
     }
 
@@ -906,12 +907,17 @@ void *rdbfw_main_loop (void *plugin_pool) {
         fwl (LOG_ERROR, NULL, "SHOTDOWN RDB Error recorded: %s\n", rdb_error_string);
     }
 
-    rdb_iterate(plugin_pool,  0, de_init_plugin_cb, NULL, NULL, NULL); 
+    rdb_iterate(plugin_pool,  2, de_init_plugin_cb, NULL, NULL, NULL); 
     fw_term(-99, plugin_pool);
     pthread_mutex_unlock(&main_mutex);
     
-    rdb_print_pool_stats(sbuf,8096);
-    fprintf(stderr,"%s\n",sbuf);
+    if (log_level >= LOG_DEBUG) {
+        fwl (LOG_DEBUG, NULL, "Pool status dump - POST-Shutdown\n");
+        rdb_print_pool_stats(sbuf,8096);
+        fprintf(stderr,"%s\n",sbuf);
+    }
+    sbuf[0]=0;
+
     pthread_exit (NULL);
     exit(0);
     rdb_iterate(plugin_pool,  0, drop_plugin_cb, NULL, unlink_plugin_cb, NULL); 
@@ -1037,10 +1043,13 @@ int main(int argc, char *argv[])
     // register plugins pool
     plugin_pool = rdb_register_um_pool(
         "plugins",
-        1,
+        3,
         0,
         RDB_KPSTR | RDB_KASC | RDB_BTREE,
         NULL);
+
+    rdb_register_um_idx (plugin_pool, 1, 0, RDB_KFIFO | RDB_NO_IDX | RDB_BTREE, NULL ); 
+    rdb_register_um_idx (plugin_pool, 2, 0, RDB_KLIFO | RDB_NO_IDX | RDB_BTREE, NULL ); 
 
     if (NULL != plugin_pool) {
     
@@ -1054,14 +1063,14 @@ int main(int argc, char *argv[])
                     if (-1 != rdbfw_app_register_plugins (plugin_pool)) {
                         //load plugins
                         rc = 0;
-                        rdb_iterate(plugin_pool,  0, load_plugin_cb, &rc, NULL, NULL); 
+                        rdb_iterate(plugin_pool,  1, load_plugin_cb, &rc, NULL, NULL); 
                         if (0 == rc) {
     
                             ac.argc = argc;
                             ac.argv = argv;
                             ac.p = NULL;
                             ac.err = 0;
-                            rdb_iterate(plugin_pool,  0, args_copy_cb, &ac, NULL, NULL); 
+                            rdb_iterate(plugin_pool,  1, args_copy_cb, &ac, NULL, NULL); 
                             if (!ac.err) {
                                 int done_with_opts = 0;
 
@@ -1112,10 +1121,10 @@ int main(int argc, char *argv[])
                                         // TODO:
                                         // add error reporting/abort
                                         int failure=0;
-                                        rdb_iterate(plugin_pool,  0, pre_init_plugin_cb, &failure, NULL, NULL); 
+                                        rdb_iterate(plugin_pool,  1, pre_init_plugin_cb, &failure, NULL, NULL); 
                                         if (!failure) {
                                             failure = 0;
-                                            rdb_iterate(plugin_pool,  0, init_plugin_cb, &failure, NULL, NULL); 
+                                            rdb_iterate(plugin_pool,  1, init_plugin_cb, &failure, NULL, NULL); 
                                             if (!failure) {
 
                                                 rdbfw_app_config_timers();
@@ -1123,7 +1132,7 @@ int main(int argc, char *argv[])
                                                 // start all plugins
                                                 rc = clock_gettime(CLOCK_REALTIME, &time_start);
 
-                                                rdb_iterate(plugin_pool,  0, start_plugin_cb, NULL, NULL, NULL); 
+                                                rdb_iterate(plugin_pool,  1, start_plugin_cb, NULL, NULL, NULL); 
 
                                                 // run until all plugins (tests) have stoped
 
@@ -1208,13 +1217,13 @@ static void fw_term(int rc, rdb_pool_t *plugin_pool) {
 
     if (rc <= -7) {
         rdb_lock(plugin_pool, __FUNCTION__);
-        rdb_iterate(plugin_pool,  0, args_free_cb, NULL, NULL, NULL); 
+        rdb_iterate(plugin_pool,  2, args_free_cb, NULL, NULL, NULL); 
         rdb_unlock(plugin_pool, __FUNCTION__);
     }
 
     if (rc <= -5) {
         rdb_lock(plugin_pool, __FUNCTION__);
-        rdb_iterate(plugin_pool,  0, drop_plugin_cb, NULL, unlink_plugin_cb, NULL); 
+        rdb_iterate(plugin_pool,  2, drop_plugin_cb, NULL, unlink_plugin_cb, NULL); 
         rdb_unlock(plugin_pool, __FUNCTION__);
     }
     if (rc <= -4) {

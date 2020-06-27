@@ -105,7 +105,7 @@ typedef enum {
 } rdbfw_plugin_state_e ;
 
 typedef struct plugins_s {
-    rdb_bpp_t               pp[1]; // Required for rDB unmanaged tree with two indexes
+    rdb_bpp_t               pp[3]; // Required for rDB unmanaged tree with three indexes
     char                    *uname; // unique name - 
     char                    *name; // non-unique - used for plugin loading / file finding
     char                    *friendly_name;
@@ -142,8 +142,8 @@ extern uint64_t wake_count_limit;
 #ifdef SHARED_ONLY
 //This function exists as an entrypoint for when the used as a shared library - linked with another app.
 //Pass argc and argv into it as you would normally use the command line version of this function.
-int rdbfw_main(int argc, char *argv[]);
 #endif
+int rdbfw_main(int argc, char *argv[]);
 
 int register_plugin(
         char *name, 
@@ -164,6 +164,7 @@ void rdbfw_update_state (plugins_t *ctx, rdbfw_plugin_state_e state);
 int rdbfw_is_running (void);
 int rdbfw_stop (void);
 int rdbfw_wait (void);
+//int fwl (int level, void *p, ...);
 
 extern rdb_pool_t *plugin_pool;
 //extern plugins_t *plugin_node;
