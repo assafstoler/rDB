@@ -4,6 +4,9 @@ project (rDB)
 SET(rdb_beta_SRCS
    src/rDB.c
 )
+SET(rdb_beta_INC
+   src/rDB.h
+)
 macro(use_c99)
   if (CMAKE_VERSION VERSION_LESS "3.1")
     if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -38,7 +41,9 @@ endmacro(use_c14)
 
 use_c14()
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -O2 -g -fms-extensions")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -fms-extensions")
+set(CMAKE_C_FLAGS_DEBUG "-Wall -O0 -g")
+set(CMAKE_C_FLAGS_RELEASE "-Wall -O3")
 
 include_directories("${PROJECT_SOURCE_DIR}/src")
 
@@ -70,13 +75,19 @@ endif (${USE_128_BIT_TYPES})
 ADD_DEFINITIONS(-DRDB_POOL_COUNTERS)
 
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -g -O0 -export-dynamic")
-add_library(rdb_beta STATIC ${rdb_beta_SRCS})
+add_library(rdb_beta STATIC ${rdb_beta_SRCS} ${rdb_beta_INC})
+
+INCLUDE_DIRECTORIES(${CMAKE_SRC_DIR}/src)
+set_target_properties(rdb_beta PROPERTIES PUBLIC_HEADER "src/rDB.h")
+INSTALL(TARGETS rdb_beta
+        LIBRARY DESTINATION /usr/local/lib
+        PUBLIC_HEADER DESTINATION /usr/local/include/rdb
+)
 
 add_subdirectory(demo)
 add_subdirectory(rdbfw)
 add_subdirectory(test)
 add_subdirectory(kernel)
-
 
 enable_testing()
 

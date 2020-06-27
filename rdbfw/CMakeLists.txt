@@ -41,9 +41,10 @@ set (HEADERS
 
 
 if (APPLE)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -g -O0 -Wno-unused-result -Wno-missing-braces -Wno-microsoft-anon-tag")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-result -Wno-missing-braces -Wno-microsoft-anon-tag")
+    #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -g -O0 -Wno-unused-result -Wno-missing-braces -Wno-microsoft-anon-tag")
 else ()
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -g -O0 -Wno-unused-result -Wno-missing-braces -Wno-unknown-warning-option -Wno-address-of-packed-member")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-result -Wno-missing-braces -Wno-unknown-warning-option -Wno-address-of-packed-member")
     # not neede for static bin... #-Wl,--no-as-needed")
 endif()
 
@@ -55,8 +56,9 @@ set (FW_SRC
     )
 
 set (LINUX_SRC 
-    "hw_timers.c"
+    "timers.c"
     )
+#"hw_timers.c" //Optional
 
 set (APPLE_SRC 
     "timers.c"
@@ -81,9 +83,9 @@ endif()
 if (SHARED_ONLY)
     MESSAGE("Building a Shared-Only build (library)")
     if(APPLE)
-    	ADD_LIBRARY(rdbfwlib SHARED rdbfw_main.c messaging.c utils.c timers.c fwalloc.c fwalloc.h rdbfw.h)
+        ADD_LIBRARY(rdbfwlib SHARED ${FW_SRC} ${APPLE_SRC} fwalloc.h rdbfw.h)
     else()
-    	ADD_LIBRARY(rdbfwlib SHARED rdbfw_main.c messaging.c utils.c timers.c hw_timers.c fwalloc.c fwalloc.h rdbfw.h)
+        ADD_LIBRARY(rdbfwlib SHARED ${FW_SRC} ${LINUX_SRC} fwalloc.h rdbfw.h)
     endif()
     target_link_libraries (rdbfwlib pthread dl rdb_beta)
 else()
@@ -96,8 +98,8 @@ else()
 endif()
 
 if (NOT STATIC_BUILD)
-    ADD_LIBRARY(event_skeleton SHARED event_driven_skeleton.c)
-    target_link_libraries (event_skeleton PRIVATE pthread dl rdb_beta)
+    #ADD_LIBRARY(event_skeleton SHARED event_driven_skeleton.c)
+    #target_link_libraries (event_skeleton PRIVATE pthread dl rdb_beta)
 
     #ADD_LIBRARY(skeleton SHARED skeleton.c utils.c messaging.c)
     #target_link_libraries (skeleton pthread dl rdb_beta rt)
@@ -110,16 +112,11 @@ if (NOT STATIC_BUILD)
 endif()
 
 
-
-if (SHARED_ONLY)
-    install(TARGETS rdbfwlib DESTINATION bin)
-else ()
-    install(TARGETS rdbfw  DESTINATION bin)
-endif()
-
-if (NOT STATIC_BUILD)
-    install(TARGETS hw_timers timers event_skeleton DESTINATION bin)
-endif()
+set_target_properties(rdbfwlib PROPERTIES PUBLIC_HEADER "rdbfw.h;log.h;ansi.h;fwalloc.h;messaging.h;utils.h")
+INSTALL(TARGETS rdbfwlib hw_timers timers
+        LIBRARY DESTINATION /usr/local/lib
+        PUBLIC_HEADER DESTINATION /usr/local/include/rdbfw
+)
 
 add_subdirectory(test)
 

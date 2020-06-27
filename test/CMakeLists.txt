@@ -4,21 +4,19 @@ SET(rdb_test_SRCS
    rdb_test.c
 )
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -g -lm")
-
 include_directories ("${PROJECT_SOURCE_DIR}/src")
 
 link_directories ("${PROJECT_SOURCE_DIR}/")
 
 link_libraries (rdb_beta)
 
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -O0 -export-dynamic -avoid-version -g")
+#set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -O0 -export-dynamic -avoid-version -g")
  
 add_executable(rdb_test rdb_test.c)
 
 target_link_libraries(rdb_test m)
 
-install(TARGETS rdb_test DESTINATION test)
+#install(TARGETS rdb_test DESTINATION test)
 
 enable_testing()
 

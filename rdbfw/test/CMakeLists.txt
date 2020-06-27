@@ -11,7 +11,6 @@ SET(fn_test_SRCS
    fn_test.c
 )
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -g -lm")
 
 include_directories ("${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/rdbfw")
 
@@ -19,14 +18,23 @@ link_directories ("${PROJECT_SOURCE_DIR}/")
 
 link_libraries (rdb_beta)
 
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -O0 -export-dynamic -avoid-version -g")
+#set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -O0 -export-dynamic -avoid-version -g")
  
 add_executable(fn_test fn_test.c ../utils.c)
 
 target_link_libraries(fn_test m)
 
 #install(TARGETS fn_test DESTINATION test)
+INSTALL(TARGETS fn_test
+        DESTINATION /usr/local/bin
+)
 
+ADD_LIBRARY(event_skeleton SHARED event_driven_skeleton.c)
+target_link_libraries (event_skeleton PRIVATE pthread dl rdb_beta)
+INSTALL(TARGETS event_skeleton
+        LIBRARY DESTINATION /usr/local/lib
+        PUBLIC_HEADER DESTINATION /usr/local/include/rdbfw
+)
 
 set(fw_test_SRCS
    fw_test.c
@@ -45,6 +53,9 @@ target_include_directories(fw_test PRIVATE ${HEADERS})
 target_link_libraries(fw_test m rdb_beta rdbfwlib rt)
 
 #install(TARGETS fn_test DESTINATION test)
+INSTALL(TARGETS fw_test
+        DESTINATION /usr/local/bin
+)
 
 
 enable_testing()

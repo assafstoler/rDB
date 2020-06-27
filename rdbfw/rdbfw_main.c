@@ -44,6 +44,7 @@ const char rdbfw_app_name[]="fw_test";
 FILE *logger = NULL;
 char out_path[255] = {0};
 int unittest_en = 0;
+int local_libs = 0;
 char log_log_buf[256];
 char sig_log_buf[256];
 
@@ -98,6 +99,9 @@ static void help_and_exit(rdb_pool_t *plugin_pool)
             "-v int\t: Set log level 0-7 (Off/Fatal/Error/Warning/Info/Dbg/Dbg+/Trace)\n"
             "-u int\t: Run unittest #\n"
             "-t int\t: test mode for # seconds (auto exit after timeout - for valgrind and alike)\n\n"
+            "ENV Variables:\n"
+            "USE_LOCAL_LIB=1 \t: Use local (./) for module library path.  Default: Use ldconfig PATH\n"
+            "RDBFW_UT=nnn \t: Run realy stage unit test #nnn - this is an alternate way to -u, as -u can not operate at early\n\tstages, prior to args being processed, which only happen after module load\n"
             ,
             (char *) &rdbfw_app_name,
             (char *) &rdbfw_app_name );
@@ -493,8 +497,9 @@ static int rdb_dump_cb (void *data, void *user_ptr) {
 
 // how much may we append to the given name. out longest is '.group', so 6
 #define PLUGIN_NAME_SUFFIX_MAX 9 
-#define PLUGIN_LIB_PREFIX "./lib"
-#define PLUGIN_LIB_PREFIX_LEN (sizeof(PLUGIN_LIB_PREFIX))
+#define PLUGIN_LIB_PREFIX "lib"
+#define PLUGIN_LCL_LIB_PREFIX "./lib"
+#define PLUGIN_LIB_PREFIX_LEN (sizeof(PLUGIN_LCL_LIB_PREFIX))
 #define PLUGIN_LIB_SUFFIX ".so"
 #define PLUGIN_LIB_SUFFIX_LEN (sizeof(PLUGIN_LIB_SUFFIX))
 
@@ -566,9 +571,19 @@ int register_plugin(
 #ifdef __MACH__
     //TODO: Add auto prefix assignment if bundle_path == NULL
     strcpy (plugin_node->pathname, bundle_path);
-    strcat (plugin_node->pathname, PLUGIN_LIB_PREFIX);
+    if (local_libs) {
+        strcat (plugin_node->pathname, PLUGIN_LCL_LIB_PREFIX);
+    }
+    else {
+        strcat (plugin_node->pathname, PLUGIN_LIB_PREFIX);
+    }
 #else
-    strcpy (plugin_node->pathname, PLUGIN_LIB_PREFIX);
+    if (local_libs) {
+        strcpy (plugin_node->pathname, PLUGIN_LCL_LIB_PREFIX);
+    }
+    else {
+        strcpy (plugin_node->pathname, PLUGIN_LIB_PREFIX);
+    }
 #endif
     strcat (plugin_node->pathname, name);
     strcat (plugin_node->pathname, PLUGIN_LIB_SUFFIX);
@@ -1008,6 +1023,12 @@ int main(int argc, char *argv[])
         log_level = LOG_DEBUG_MORE;
         fwl (LOG_INFO, NULL, "Unittest via ENV: %d\n", unittest_en);
     }
+    const char* lib_str = getenv("RDBFW_LOCAL_LIB");
+    if (NULL != lib_str) {
+        local_libs = 1;
+        fwl (LOG_INFO, NULL, "using ./ Library PATH\n");
+    }
+    else fwl (LOG_INFO, NULL, "NOT using ./ Library PATH\n");
 
 
     // initilize the rDB library

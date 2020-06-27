@@ -10,11 +10,11 @@
 #include <errno.h>
 #include <dlfcn.h>
 
-#include "rDB.h"
-#include "messaging.h"
-#include "rdbfw.h"
-#include "utils.h"
-#include "log.h"
+#include <rdb/rDB.h>
+#include <rdbfw/messaging.h>
+#include <rdbfw/rdbfw.h>
+#include <rdbfw/utils.h>
+#include <rdbfw/log.h>
 #ifdef USE_PRCTL
 #include <sys/prctl.h>
 #endif
