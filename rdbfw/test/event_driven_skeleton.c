@@ -209,7 +209,7 @@ static void skel_event_start(void *p) {
                 rdbmsg_lookup_id ("ROUTE_MDL_TIMERS"),
                 rdbmsg_lookup_id ("GROUP_TIMERS"),
                 rdbmsg_lookup_id ("ID_TIMER_START"),
-                2000 );
+                20 );
 }
 
 static void skel_event_stop(void *pp) {

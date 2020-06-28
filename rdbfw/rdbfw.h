@@ -139,26 +139,19 @@ typedef struct plugins_s {
 
 extern uint64_t wake_count_limit;
 
-#ifdef SHARED_ONLY
-//This function exists as an entrypoint for when the used as a shared library - linked with another app.
-//Pass argc and argv into it as you would normally use the command line version of this function.
-#endif
-int rdbfw_main(int argc, char *argv[]);
+int rdbfw_main(int argc, char *argv[], char *app_name);
 
 int register_plugin(
         char *name, 
         rdb_pool_t *plugin_pool,
- //       plugins_t *plugin_node,
         int msg_slots,
         uint32_t req_ctx_id
-        /*int argc,
-        char **argv*/);
+        );
 
-void rdbfw_handle_fatal_error(void);
 void rdbfw_app_help(void);
 int rdbfw_app_process_opts (int argc, char **argcv);
 int rdbfw_app_prealloc ( void );
-int rdbfw_app_register_plugins ( rdb_pool_t *plugin_pool /*int, char***/ );
+int rdbfw_app_register_plugins ( rdb_pool_t *plugin_pool );
 void rdbfw_app_config_timers ( void );
 void rdbfw_update_state (plugins_t *ctx, rdbfw_plugin_state_e state);
 int rdbfw_is_running (void);
@@ -167,8 +160,7 @@ int rdbfw_wait (void);
 //int fwl (int level, void *p, ...);
 
 extern rdb_pool_t *plugin_pool;
-//extern plugins_t *plugin_node;
-extern const char rdbfw_app_name[];
+extern const char *rdbfw_app_name;
 
 extern uint32_t log_level;
 extern pthread_mutex_t  log_mutex;

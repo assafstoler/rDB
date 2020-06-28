@@ -13,6 +13,7 @@
 #include <sys/prctl.h>
 #endif
 
+//const char rdbfw_app_name[]="fw_test";
 
 // Make sure not to collide with framework opts (m,o,v,u,t and h)
 // sure 
@@ -104,7 +105,7 @@ int main(int argc, char *argv[]) {
 #ifdef USE_PRCTL
     prctl(PR_SET_NAME,"fw_test-main\0",NULL,NULL,NULL);
 #endif
-    if (0 != rdbfw_main (argc, argv)) {
+    if (0 != rdbfw_main (argc, argv, "fw_test")) {
         printf("Fatal: Error loading framework - Abort\n");
         exit(1);
     }
@@ -113,7 +114,7 @@ int main(int argc, char *argv[]) {
  
     fwl_no_emit(LOG_INFO, NULL,"RErunning\n");
 
-    if (0 != rdbfw_main (argc, argv)) {
+    if (0 != rdbfw_main (argc, argv, "fw_test 2")) {
         printf("Fatal: Error loading framework - Abort\n");
         exit(1);
     }

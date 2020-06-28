@@ -1,4 +1,3 @@
-//Copyright (c) 2014-2020 Assaf Stoler <assaf.stoler@gmail.com>
 //All rights reserved.
 //see LICENSE for more info
 
@@ -28,16 +27,13 @@
 #include "fwalloc.h"
 #include <errno.h>
 #include <locale.h>
-
 #include "signal.h"
-
 #include "log.h"
 
 #ifdef USE_PRCTL
 #include <sys/prctl.h>
 #endif
 
-const char rdbfw_app_name[]="fw_test";
 
 #define PLUGINS_SUFFIX "_rdbfw_fns"
 
@@ -47,6 +43,7 @@ int unittest_en = 0;
 int local_libs = 0;
 char log_log_buf[256];
 char sig_log_buf[256];
+const char *rdbfw_app_name = NULL;
 
 uint32_t log_level = LOG_WARN;
 pthread_mutex_t  log_mutex;
@@ -76,7 +73,6 @@ static uint32_t ctx_auto_id = 0;
 
 //Protorypes
 //
-void rdbfw_handle_fatal_error(void);
 static void fw_term(int rc, rdb_pool_t *plugin_pool);
 
 //Code...
@@ -103,8 +99,8 @@ static void help_and_exit(rdb_pool_t *plugin_pool)
             "USE_LOCAL_LIB=1 \t: Use local (./) for module library path.  Default: Use ldconfig PATH\n"
             "RDBFW_UT=nnn \t: Run realy stage unit test #nnn - this is an alternate way to -u, as -u can not operate at early\n\tstages, prior to args being processed, which only happen after module load\n"
             ,
-            (char *) &rdbfw_app_name,
-            (char *) &rdbfw_app_name );
+            (char *) rdbfw_app_name,
+            (char *) rdbfw_app_name );
 
     rdbfw_app_help();
     
@@ -145,7 +141,7 @@ static int load_plugin_cb (void *data, void *user_ptr) {
 #ifdef STATIC_BUILD
     p->handle = dlopen (NULL , RTLD_LAZY| RTLD_GLOBAL);
 #else
-    p->handle = dlopen (p->pathname , RTLD_NOW| RTLD_LOCAL);
+    p->handle = dlopen (p->pathname , RTLD_NOW| RTLD_GLOBAL);
 #endif
     if (p->handle == NULL) {
         eptr = dlerror();
@@ -184,7 +180,6 @@ static int load_plugin_cb (void *data, void *user_ptr) {
 
 load_plugin_cb_err:
 
-    //rdbfw_handle_fatal_error();
     if (p->handle) {
         dlclose(p->handle);
         p->handle = NULL;
@@ -722,26 +717,6 @@ static void unlink_plugin_cb (void *data, void *user_ptr) {
     return;
 }
 
-void rdbfw_handle_fatal_error(void) {
-    //if we are run as a service / library, this would be a place
-    //to report failure back to calling process .. and hang - nothing we
-    //can do. 
-    //
-
-#ifdef SHARED_ONLY
-    // HERE is a good place to call-back and report fatal failure
-    rdbfw_stop();
-    return;
-
-    while (1) {
-        sleep (1);
-    }
-#else
-    //If we are stand alone process. exit (1) is probably appropriate
-    exit(1);
-#endif
-}
-
 typedef struct args_copy_s {
     int argc;
     char **argv;
@@ -975,7 +950,7 @@ void *rdbfw_main_loop (void *plugin_pool) {
 int main(int argc, char *argv[])
 #else
 #ifdef SHARED_ONLY
-int rdbfw_main(int argc, char *argv[])
+int rdbfw_main(int argc, char *argv[], char *app_name)
 #else
 int main(int argc, char *argv[])
 #endif
@@ -983,13 +958,12 @@ int main(int argc, char *argv[])
 {
     int rc;
     int show_help = 0;
-    
-
-
     int c;
     args_copy_t ac;
     pthread_attr_t attr;
     rdb_pool_t *plugin_pool;
+
+    rdbfw_app_name = app_name;
     
     log_level = LOG_WARN;
 
