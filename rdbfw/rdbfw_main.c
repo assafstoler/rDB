@@ -50,6 +50,7 @@ pthread_mutex_t  log_mutex;
 
 static int automated_test  = 0;
 static int break_requested = 0;
+static int break_requested_by_user = 0; // signify cause of break so can return correct error to calling process
 static int signal_trapped = 0;
 static int rdbfw_active = 0;
         
@@ -647,6 +648,7 @@ static void sig_func(int sig) {
         sigfwlog (LOG_WARN, "Caught signal %d\n", sig);
         signal_trapped = sig;
         break_requested = 1;
+        break_requested_by_user = 1;
         pthread_mutex_lock(&main_mutex);
         pthread_cond_signal(&main_condition);
         pthread_mutex_unlock(&main_mutex);
@@ -676,6 +678,7 @@ static void sig_func(int sig) {
         fwlog (LOG_WARN, "Caught SigQUIT %d\n", sig);
         signal_trapped = sig;
         break_requested = 1;
+        break_requested_by_user = 1;
         pthread_mutex_lock(&main_mutex);
         pthread_cond_signal(&main_condition);
         pthread_mutex_unlock(&main_mutex);
@@ -684,6 +687,7 @@ static void sig_func(int sig) {
         fwlog (LOG_WARN, "Caught SigTERM %d\n", sig);
         signal_trapped = sig;
         break_requested = 1;
+        break_requested_by_user = 1;
         pthread_mutex_lock(&main_mutex);
         pthread_cond_signal(&main_condition);
         pthread_mutex_unlock(&main_mutex);
@@ -808,27 +812,34 @@ void rdbfw_update_state (plugins_t *ctx, rdbfw_plugin_state_e state) {
 
 }
 int rdbfw_is_running (void) {
-    pthread_mutex_lock(&main_mutex);
-    pthread_cond_signal(&main_condition);
-    pthread_mutex_unlock(&main_mutex);
+    if (rdbfw_active) {
+        pthread_mutex_lock(&main_mutex);
+        pthread_cond_signal(&main_condition);
+        pthread_mutex_unlock(&main_mutex);
+    }
     return (rdbfw_active);
 }
 
 int rdbfw_stop (void) {
-    pthread_mutex_lock(&main_mutex);
-    break_requested = 1;
-    pthread_cond_signal(&main_condition);
-    pthread_mutex_unlock(&main_mutex);
-    pthread_join (main_thread, NULL);
-    rdbfw_active = 0;
+    if (rdbfw_active) {
+        pthread_mutex_lock(&main_mutex);
+        break_requested = 1;
+        pthread_cond_signal(&main_condition);
+        pthread_mutex_unlock(&main_mutex);
+        pthread_join (main_thread, NULL);
+        rdbfw_active = 0;
+    }
     return (rdbfw_active);
 }
 // wait for natural stoppage (signaled by one of the active modules)
 int rdbfw_wait (void) {
-    pthread_mutex_unlock(&main_mutex);
-    pthread_join (main_thread, NULL);
-    rdbfw_active = 0;
-    return (rdbfw_active);
+    int *rc;
+    if (rdbfw_active) {
+        pthread_mutex_unlock(&main_mutex);
+        pthread_join (main_thread, &rc);
+        rdbfw_active = 0;
+    }
+    return (*rc);
 }
 
 void *rdbfw_main_loop (void *plugin_pool) {
@@ -887,13 +898,15 @@ void *rdbfw_main_loop (void *plugin_pool) {
     pthread_mutex_unlock(&main_mutex);
     
     if (log_level >= LOG_DEBUG) {
-        fwl (LOG_DEBUG, NULL, "Pool status dump - POST-Shutdown\n");
+        fwl_no_emit (LOG_DEBUG, NULL, "Pool status dump - POST-Shutdown\n");
         rdb_print_pool_stats(sbuf,8096);
         fprintf(stderr,"%s\n",sbuf);
     }
     sbuf[0]=0;
 
-    pthread_exit (NULL);
+    rdbfw_active = 0;
+    rc = break_requested_by_user ? 1 : 0; 
+    pthread_exit (&rc);
     exit(0);
     rdb_iterate(plugin_pool,  0, drop_plugin_cb, NULL, unlink_plugin_cb, NULL); 
     rdbmsg_clean();
@@ -946,15 +959,7 @@ void *rdbfw_main_loop (void *plugin_pool) {
     pthread_exit (NULL);
 }
 
-#ifdef RDB_USE_STD_MAIN
-int main(int argc, char *argv[])
-#else
-#ifdef SHARED_ONLY
 int rdbfw_main(int argc, char *argv[], char *app_name)
-#else
-int main(int argc, char *argv[])
-#endif
-#endif
 {
     int rc;
     int show_help = 0;
@@ -1174,7 +1179,9 @@ int main(int argc, char *argv[])
         fwl (LOG_FATAL, NULL, "Plugin_pool Registration failure\n");
         rc = -1;
     }
-    fwl_no_emit (LOG_ERROR, NULL, "startup rc = %d\n", rc);
+    if (rc != 0 && rc != RDBFW_ERR_HELP_REQUESTED) {
+        fwl_no_emit (LOG_ERROR, NULL, "startup rc = %d\n", rc);
+    }
 
     fw_term (rc, plugin_pool);
 
@@ -1221,5 +1228,8 @@ static void fw_term(int rc, rdb_pool_t *plugin_pool) {
         // for any error, we also need to clean up the basics
         rdb_flush (plugin_pool, NULL, NULL);
         rdb_drop_pool (plugin_pool);
+
+        rdbfw_active = 0;
+        //break_requested_by_user = 0; 
     }
 }

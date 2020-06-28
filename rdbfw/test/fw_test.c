@@ -101,28 +101,33 @@ void rdbfw_app_config_timers( void ) {
 // interact with the framework externally (like unit-test) may find this a convenient
 // to use main to run external code
 int main(int argc, char *argv[]) {
+    int rc;
 
 #ifdef USE_PRCTL
     prctl(PR_SET_NAME,"fw_test-main\0",NULL,NULL,NULL);
 #endif
-    if (0 != rdbfw_main (argc, argv, "fw_test")) {
-        printf("Fatal: Error loading framework - Abort\n");
+    if (0 != (rc = rdbfw_main (argc, argv, "fw_test"))) {
+        if ( RDBFW_ERR_HELP_REQUESTED != rc) {
+            printf("Fatal: Error loading framework - Abort\n");
+        }
         exit(1);
     }
     printf("is running %d\n", rdbfw_is_running());
-    rdbfw_wait();
- 
-    fwl_no_emit(LOG_INFO, NULL,"RErunning\n");
+    if (0 == rdbfw_wait()) {
 
-    if (0 != rdbfw_main (argc, argv, "fw_test 2")) {
-        printf("Fatal: Error loading framework - Abort\n");
-        exit(1);
+        fwl_no_emit(LOG_INFO, NULL,"RErunning\n");
+
+        if (0 != rdbfw_main (argc, argv, "fw_test 2")) {
+            printf("Fatal: Error loading framework - Abort\n");
+            exit(1);
+        }
+        sleep(1);
+        printf("is running %d\n", rdbfw_is_running());
+        rdbfw_stop();
+
+        printf("is running %d\n", rdbfw_is_running());
     }
-    sleep(1);
-    printf("is running %d\n", rdbfw_is_running());
-    rdbfw_stop();
-
-    printf("is running %d\n", rdbfw_is_running());
+    else printf("-only-once-\n");
 
     exit(0);
     

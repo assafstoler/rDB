@@ -194,5 +194,20 @@ extern pthread_mutex_t  log_mutex;
 
 #define UT_INIT_1 50
 
+// framework error codes
+
+#define RDBFW_SUCCESS 0
+#define RDBFW_ERR_THREAD_CREATE -12 // failure to spawn rdbfw_main_loop
+#define RDBFW_ERR_INIT_MODULE -11   // Failure to initilize a module
+#define RDBFW_ERR_PRE_INIT_MODULE -10 // Failure in pre-init stage
+#define RDBFW_ERR_MODULE_OPTS -9           // Failure processing opts
+#define RDBFW_ERR_HELP_REQUESTED -8 // Print help screen and abort indicated in command line opts
+#define RDBFW_ERR_OPTS -7           // Failure processing main args
+#define RDBFW_ERR_MODULE_LOAD -6    // Module load error (load_plugin_cb())
+#define RDBFW_ERR_MODULE_LOAD -5    // Module Registration error (register_plugin_cb())
+#define RDBFW_ERR_PREALLOC -4       // memory (pre)allocation error
+#define RDBFW_ERR_PREALLOC_INIT -3  // Error initilizing internal memory allocator
+#define RDBFW_ERR_MESSAGING_INIT -2 // Messaging subsystem failed ot load
+#define RDBFW_ERR_MAIN_POOL -1      // Unable to register Main pool
 // test 
 #endif
