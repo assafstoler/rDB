@@ -355,6 +355,7 @@ rdb_pool_t *rdb_add_pool (
         void *compare_fn) {
 
     rdb_pool_t *pool;
+    int name_length;
 
     pool = rdb_alloc(sizeof (rdb_pool_t));
 
@@ -373,7 +374,8 @@ rdb_pool_t *rdb_add_pool (
         pool_root->prev = pool;
 
     pool_root = pool;
-    pool->name = rdb_alloc (strlen (poolName) + 1);
+    name_length = strlen (poolName);
+    pool->name = rdb_alloc (name_length + 1);
 
     if (pool->name == NULL) {
         rdb_error ("rDB: Fatal: pool allocation error, out of memor for pool"
@@ -383,7 +385,8 @@ rdb_pool_t *rdb_add_pool (
         return NULL;
     }
 
-    strcpy (pool->name, poolName);
+    strncpy (pool->name, poolName, name_length);
+    pool->name[name_length] = 0;
     
     if (-1 == set_pool_fn_pointers(pool, 0, FLAGS, compare_fn)){
         rdb_error ("rDB: Fatal: pool registration without type or matching"
