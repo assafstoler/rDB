@@ -29,6 +29,7 @@
 #include <locale.h>
 #include "signal.h"
 #include "log.h"
+#include "model_cpp_interface.h"
 
 #ifdef USE_PRCTL
 #include <sys/prctl.h>
@@ -138,17 +139,22 @@ static int load_plugin_cb (void *data, void *user_ptr) {
         return RDB_CB_OK;
     }
 
-        
+   
+    if ( p->cpp ) {
+        p->mdl = constructModel(p->pathname);
+    } 
+    else {
 #ifdef STATIC_BUILD
-    p->handle = dlopen (NULL , RTLD_LAZY| RTLD_GLOBAL);
+        p->handle = dlopen (NULL , RTLD_LAZY| RTLD_GLOBAL);
 #else
-    p->handle = dlopen (p->pathname , RTLD_NOW| RTLD_GLOBAL);
+        p->handle = dlopen (p->pathname , RTLD_LAZY| RTLD_GLOBAL);
 #endif
-    if (p->handle == NULL) {
-        eptr = dlerror();
-        fwl (LOG_ERROR, p, "failed to load plugin %s - %s\n", p->pathname, eptr);
-        //eptr=dlerror();
-        goto load_plugin_cb_err;
+        if (p->handle == NULL) {
+            eptr = dlerror();
+            fwl (LOG_ERROR, p, "failed to load plugin %s - %s\n", p->pathname, eptr);
+            //eptr=dlerror();
+            goto load_plugin_cb_err;
+        }
     }
     
     if (unittest_en != UT_LOAD_PLUGIN_2) {
@@ -163,13 +169,24 @@ static int load_plugin_cb (void *data, void *user_ptr) {
     strcat(buf,"_rdbfw_fns");
 
     if (unittest_en != UT_LOAD_PLUGIN_3) {
-        p->plugin_info = (rdbfw_plugin_api_t *) dlsym(p->handle, buf); 
-    }
-    if ((p->plugin_info == NULL) ||
-            ((eptr = dlerror()) != NULL))  {
-        fwl (LOG_ERROR, p, "failed dlsym() : %s - %s\n", eptr, buf);
-        //eptr=dlerror();
-        goto load_plugin_cb_err;
+        if ( p->cpp ) {
+            getName(p->mdl);
+            p->cpp_plugin_info.pre_init = getPreInitPtr(p->mdl);
+            p->cpp_plugin_info.init = getInitPtr(p->mdl);
+            p->cpp_plugin_info.start = getStartPtr(p->mdl);
+            p->cpp_plugin_info.stop = getStopPtr(p->mdl);
+            p->cpp_plugin_info.de_init = getDeinitPtr(p->mdl);
+            p->plugin_info = &p->cpp_plugin_info;
+        }
+        else {
+            p->plugin_info = (rdbfw_plugin_api_t *) dlsym(p->handle, buf); 
+        }
+        if ((p->plugin_info == NULL) ||
+                ((eptr = dlerror()) != NULL))  {
+            fwl (LOG_ERROR, p, "failed dlsym() : %s - %s\n", eptr, buf);
+            //eptr=dlerror();
+            goto load_plugin_cb_err;
+        }
     }
 
     free(buf);
@@ -503,9 +520,9 @@ int register_plugin(
         char *name, 
         rdb_pool_t *plugin_pool,
         int msg_slots,
-        uint32_t req_ctx_id
-        /*int argc,
-        char **argv*/) {
+        uint32_t req_ctx_id,
+        int cpp
+        ) {
     plugins_t *plugin_node;
     uint32_t ctx_id;
     char *buf;
@@ -515,8 +532,8 @@ int register_plugin(
     if (name == NULL) {
         goto register_plugin_err;
     }
-    
-    buf = malloc(strlen(name) + PLUGIN_NAME_SUFFIX_MAX + 1) ;
+    //TODO: why is +100 here. verify and re-drop to +1 (came from cpp merga)
+    buf = malloc(strlen(name) + PLUGIN_NAME_SUFFIX_MAX + 100) ;
     if (buf == NULL) {
         goto register_plugin_err;
     }
@@ -548,6 +565,8 @@ int register_plugin(
         ctx_id = req_ctx_id;
     }
     plugin_node->ctx_id = ctx_id;
+
+    plugin_node->cpp = cpp;
 
     sprintf(plugin_node->name, "%s", name);
     sprintf(plugin_node->uname, "%s.%"PRIu32"", name, ctx_id);

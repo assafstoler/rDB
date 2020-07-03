@@ -49,7 +49,15 @@
  *   Modules may or may not be unloaded from the FW after a de_init call. 
  ***/
 #include <stdio.h>
+
+#ifdef BUILDING_LIB
+#include "rDB.h"
+#include "model_cpp_interface.h"
+#else
 #include <rdb/rDB.h>
+#include <rdbfw/model_cpp_interface.h>
+#endif
+
 
 // Used by moduels which can only load once
 static const uint64_t CTX_SINGULAR = 0;
@@ -134,6 +142,10 @@ typedef struct plugins_s {
     int                     sig_id;         // signal (only set for signal() fn)
     int                     argc;
     char                    **argv;
+    // Below 3 lines only sed wirh CPP linkage
+    int                     cpp;
+    Model                   *mdl;
+    rdbfw_plugin_api_t      cpp_plugin_info;
 
 } plugins_t;
 
@@ -145,7 +157,8 @@ int register_plugin(
         char *name, 
         rdb_pool_t *plugin_pool,
         int msg_slots,
-        uint32_t req_ctx_id
+        uint32_t req_ctx_id,
+        int cpp
         );
 
 void rdbfw_app_help(void);
@@ -164,6 +177,11 @@ extern const char *rdbfw_app_name;
 
 extern uint32_t log_level;
 extern pthread_mutex_t  log_mutex;
+
+// Module Linkage
+
+#define C_MODULE 0
+#define CPP_MODULE 1
 
 // UNITTEST Test definitiond
 

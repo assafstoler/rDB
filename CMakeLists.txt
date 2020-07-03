@@ -44,6 +44,9 @@ use_c14()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -fms-extensions")
 set(CMAKE_C_FLAGS_DEBUG "-Wall -O0 -g")
 set(CMAKE_C_FLAGS_RELEASE "-Wall -O3")
+set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -fPIC -fms-extensions")
+set(CMAKE_CXX_FLAGS_DEBUG "-Wall -O0 -g")
+set(CMAKE_CXX_FLAGS_RELEASE "-Wall -O3")
 
 include_directories("${PROJECT_SOURCE_DIR}/src")
 

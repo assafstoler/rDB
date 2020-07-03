@@ -138,8 +138,8 @@ int rdbfw_alloc_prealloc (uint32_t sz, uint32_t count, uint32_t max_count, int h
     }
     //Sanity
     if ( sz > MAX_RDBFW_ALLOC_SZ || sz == 0 ) {
-        fwl (LOG_ERROR, NULL, "Sanity: Failed to prealloc memory - called with sz:%"PRIu32", ct: %"PRIu32
-                ", max_ct %"PRIu32", pool = %p\n", sz, count, max_count, alloc_master_pool); 
+        fwl (LOG_ERROR, NULL, "Sanity: Failed to prealloc memory - called with sz:%" PRIu32 ", ct: %" PRIu32
+                ", max_ct %" PRIu32 ", pool = %p\n", sz, count, max_count, alloc_master_pool); 
         goto rdbfw_alloc_prealloc_err;
     }
 
@@ -152,7 +152,7 @@ int rdbfw_alloc_prealloc (uint32_t sz, uint32_t count, uint32_t max_count, int h
                 count > max_count ||
                 ! max_count ||
                 NULL == alloc_master_pool) {
-            fwl (LOG_ERROR, NULL, "Failed to prealloc memory - called with sz:%"PRIu32", ct: %"PRIu32
+            fwl (LOG_ERROR, NULL, "Failed to prealloc memory - called with sz:%" PRIu32 ", ct: %" PRIu32 
                     ", max_ct %"PRIu32", pool = %p\n", sz, count, max_count, alloc_master_pool); 
             goto rdbfw_alloc_prealloc_err;
         }
@@ -200,7 +200,7 @@ int rdbfw_alloc_prealloc (uint32_t sz, uint32_t count, uint32_t max_count, int h
                 am->sb_cnt, am->sb_sz, am->sb_gsz, am->sb_item_cnt, am->block_sz, gross_sz);
 
         // Register pools 
-        snprintf( buf, ALLOC_NAME_LN, "alloc.%"PRIu32".super", sz );
+        snprintf( buf, ALLOC_NAME_LN, "alloc.%" PRIu32 ".super", sz );
 
         if (unittest_en != UT_ALLOC_PRE_3) {
             am->superblock_pool = rdb_register_um_pool (buf, 1, 
@@ -213,7 +213,7 @@ int rdbfw_alloc_prealloc (uint32_t sz, uint32_t count, uint32_t max_count, int h
             goto rdbfw_alloc_prealloc_err;
         }
 
-        snprintf( buf, ALLOC_NAME_LN, "alloc.%"PRIu32".free", sz );
+        snprintf( buf, ALLOC_NAME_LN, "alloc.%" PRIu32 ".free", sz );
 
         // free pool must be of type LIFO so we can 'undo' allocation in case of failure
         if (unittest_en != UT_ALLOC_PRE_4) {
@@ -227,7 +227,7 @@ int rdbfw_alloc_prealloc (uint32_t sz, uint32_t count, uint32_t max_count, int h
             goto rdbfw_alloc_prealloc_err;
         }
 
-        snprintf( buf, ALLOC_NAME_LN, "alloc.%"PRIu32".used", sz );
+        snprintf( buf, ALLOC_NAME_LN, "alloc.%" PRIu32 ".used", sz );
     }
     else {
         add_on = 1;
