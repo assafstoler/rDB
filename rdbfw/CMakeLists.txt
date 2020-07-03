@@ -2,7 +2,6 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.8 FATAL_ERROR)
 
 PROJECT(rdbfw)
 
-
 #SET(PACKAGE_STRING "${PACKAGE_NAME} ${PACKAGE_VERSION}")
 #ADD_DEFINITIONS(-DPACKAGE_VERSION="${PACKAGE_VERSION}")
 #ADD_DEFINITIONS(-DPACKAGE_STRING="${PACKAGE_STRING}")
@@ -21,6 +20,9 @@ PROJECT(rdbfw)
 
 #Uncomemnt below to build fw itself as a shared library (no main)
 set (SHARED_ONLY true)
+
+#Used to govern include file directive (local vs system)
+ADD_DEFINITIONS(-DBUILDING_LIB)
 
 #Uncomment to use pre-allocated buffers
 ADD_DEFINITIONS(-DUSE_MSG_BUFFERS)
@@ -78,7 +80,7 @@ if (NOT APPLE)
     ADD_DEFINITIONS(-DUSE_PRCTL)
 endif()
 
-
+add_subdirectory(cpp_helpers)
 
 if (SHARED_ONLY)
     MESSAGE("Building a Shared-Only build (library)")
@@ -87,7 +89,7 @@ if (SHARED_ONLY)
     else()
         ADD_LIBRARY(rdbfwlib SHARED ${FW_SRC} ${LINUX_SRC} fwalloc.h rdbfw.h)
     endif()
-    target_link_libraries (rdbfwlib pthread dl rdb_beta)
+    target_link_libraries (rdbfwlib pthread dl rdb_beta cpp_helpers)
     target_include_directories (rdbfwlib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 else()
     ADD_EXECUTABLE(rdbfw rdbfw_main.c messaging.c utils.c rdbfw.h hw_timers.c timers.c fwalloc.c skeleton.c event_driven_skeleton.c)
@@ -99,19 +101,14 @@ else()
 endif()
 
 if (NOT STATIC_BUILD)
-    #ADD_LIBRARY(event_skeleton SHARED event_driven_skeleton.c)
-    #target_link_libraries (event_skeleton PRIVATE pthread dl rdb_beta)
-
-    #ADD_LIBRARY(skeleton SHARED skeleton.c utils.c messaging.c)
-    #target_link_libraries (skeleton pthread dl rdb_beta rt)
-
     ADD_LIBRARY(timers SHARED timers.c utils.c messaging.c)
+    target_include_directories (timers PRIVATE $<TARGET_PROPERTY:cpp_helpers,INCLUDE_DIRECTORIES>)
     target_link_libraries (timers pthread dl rdb_beta rt)
 
     ADD_LIBRARY(hw_timers SHARED hw_timers.c utils.c messaging.c)
+    target_include_directories (hw_timers PRIVATE $<TARGET_PROPERTY:cpp_helpers,INCLUDE_DIRECTORIES>)
     target_link_libraries (hw_timers pthread dl rdb_beta rt)
 endif()
-
 
 set_target_properties(rdbfwlib PROPERTIES PUBLIC_HEADER "rdbfw.h;log.h;ansi.h;fwalloc.h;messaging.h;utils.h")
 INSTALL(TARGETS rdbfwlib hw_timers timers

@@ -47,7 +47,7 @@ static const int64_t reducer = 1563000000;
 #define fwlog(a, b, arg...)  do {    \
         if (log_level >= a) {       \
             pthread_mutex_lock(&log_mutex); \
-            fprintf(stdout, "%"PRIi64":%20s:_%d_:", clock_gettime_ms(NULL), __FUNCTION__, a); \
+            fprintf(stdout, "%" PRIi64 ":%20s:_%d_:", clock_gettime_ms(NULL), __FUNCTION__, a); \
             fprintf(stdout,b,##arg);    \
             pthread_mutex_unlock(&log_mutex); \
         }           \
