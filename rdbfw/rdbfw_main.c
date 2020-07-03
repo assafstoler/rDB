@@ -836,7 +836,7 @@ int rdbfw_wait (void) {
     int *rc;
     if (rdbfw_active) {
         pthread_mutex_unlock(&main_mutex);
-        pthread_join (main_thread, &rc);
+        pthread_join (main_thread, (void **) &rc);
         rdbfw_active = 0;
     }
     return (*rc);

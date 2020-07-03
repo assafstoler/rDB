@@ -11,8 +11,8 @@
 #include <unistd.h>
 #include <getopt.h>
 #include "rDB.h"
-#include "../utils.h"
-#include "../log.h"
+#include "utils.h"
+#include "log.h"
 
 
 uint32_t log_level = LOG_WARN;
