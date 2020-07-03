@@ -13,7 +13,6 @@
 #include <memory>
 #include <iostream>
 #include "model_cpp_interface.h"
-//#include "utils.h"
 
 static void skel_event_pre_init(void *p);
 static void skel_event_init(void *p);
@@ -104,7 +103,6 @@ static void skel_event_init(void *p) {
     if (ctx->state == RDBFW_STATE_LOADED) {
         ctx->state = RDBFW_STATE_INITIALIZED;
     }
-
 }
 
 static void skel_event_start(void *p) {

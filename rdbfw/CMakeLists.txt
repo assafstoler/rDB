@@ -2,7 +2,6 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.8 FATAL_ERROR)
 
 PROJECT(rdbfw)
 
-
 #SET(PACKAGE_STRING "${PACKAGE_NAME} ${PACKAGE_VERSION}")
 #ADD_DEFINITIONS(-DPACKAGE_VERSION="${PACKAGE_VERSION}")
 #ADD_DEFINITIONS(-DPACKAGE_STRING="${PACKAGE_STRING}")
@@ -102,12 +101,6 @@ else()
 endif()
 
 if (NOT STATIC_BUILD)
-    #ADD_LIBRARY(event_skeleton SHARED event_driven_skeleton.c)
-    #target_link_libraries (event_skeleton PRIVATE pthread dl rdb_beta)
-
-    #ADD_LIBRARY(skeleton SHARED skeleton.c utils.c messaging.c)
-    #target_link_libraries (skeleton pthread dl rdb_beta rt)
-
     ADD_LIBRARY(timers SHARED timers.c utils.c messaging.c)
     target_include_directories (timers PRIVATE $<TARGET_PROPERTY:cpp_helpers,INCLUDE_DIRECTORIES>)
     target_link_libraries (timers pthread dl rdb_beta rt)
@@ -116,7 +109,6 @@ if (NOT STATIC_BUILD)
     target_include_directories (hw_timers PRIVATE $<TARGET_PROPERTY:cpp_helpers,INCLUDE_DIRECTORIES>)
     target_link_libraries (hw_timers pthread dl rdb_beta rt)
 endif()
-
 
 set_target_properties(rdbfwlib PROPERTIES PUBLIC_HEADER "rdbfw.h;log.h;ansi.h;fwalloc.h;messaging.h;utils.h")
 INSTALL(TARGETS rdbfwlib hw_timers timers
