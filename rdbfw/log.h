@@ -5,11 +5,21 @@
 #ifndef __LOG_H
 #define __LOG_H
 #include <pthread.h>
+#include <inttypes.h>
+
+#ifdef BUILDING_LIB
+#include "model_cpp_interface.h"
 #include "messaging.h"
 #include "rdbfw.h"
 #include "utils.h"
-#include <inttypes.h>
 #include "ansi.h"
+#else
+#include <rdbfw/model_cpp_interface.h>
+#include <rdbfw/messaging.h>
+#include <rdbfw/rdbfw.h>
+#include <rdbfw/utils.h>
+#include <rdbfw/ansi.h>
+#endif
 
 #include <stdio.h>
 

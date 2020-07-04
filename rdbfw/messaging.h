@@ -5,7 +5,11 @@
 #ifndef MESSAGING_H
 #define MESSAGING_H
 
+#ifdef BUILDING_LIB
 #include "rdbfw.h"
+#else
+#include <rdbfw/rdbfw.h>
+#endif
 
 #define RDBMSG_RC_NO_MATCH       0
 #define RDBMSG_RC_IS_SUBSCRIBER  1
