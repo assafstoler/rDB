@@ -57,13 +57,13 @@ static int myDump(void *ptr){
 int simple_demo(rdb_pool_t *pool) {
 
     pdd=malloc(sizeof(demo_data_t));
-    if (!pdd) fatal("fatal: failed allocating data node\n");
-	info("main addr %p\n", pdd);	
+    if (!pdd) rdb_fatal("fatal: failed allocating data node\n");
+	rdb_info("main addr %p\n", pdd);	
 
     // We allocate the address pointer so it can point to a string
 	pdd->address_ptr = malloc(64);
-    if (!pdd->address_ptr) fatal("fatal: failed allocating address_pointer\n");
-    info ("address ptr = %p\n", pdd->address_ptr);
+    if (!pdd->address_ptr) rdb_fatal("fatal: failed allocating address_pointer\n");
+    rdb_info ("address ptr = %p\n", pdd->address_ptr);
 
 	strcpy(pdd->name,"Assaf Stoler");
 	strcpy(pdd->address_ptr,"rdb@assafstoler.com");
@@ -74,7 +74,7 @@ int simple_demo(rdb_pool_t *pool) {
  	if (rdb_insert(pool,pdd) != INDEXES) 
         error("one or more index failed insertion\n");
 
- 	info("We will now dump the tree, containing one record\n");
+ 	rdb_info("We will now dump the tree, containing one record\n");
     rdb_dump(pool,1,"\n");
 
     // rDB is smart enought to know it needs to free address_ptr before it free
@@ -104,9 +104,9 @@ int um_multi_record_insert_demo(rdb_pool_t *pool) {
 			for (c=0; c<LOOPS; c++) {
 				for (d=0; d<LOOPS; d++) {
 					pdd=malloc(sizeof(demo_data_t));
-					if (pdd==NULL) fatal("Allocation error in %s\n",__FUNCTION__);
+					if (pdd==NULL) rdb_fatal("Allocation error in %s\n",__FUNCTION__);
 					pdd->address_ptr = calloc(1,16);
-					if (pdd->address_ptr == NULL) fatal("Allocation error in %s\n",__FUNCTION__);
+					if (pdd->address_ptr == NULL) rdb_fatal("Allocation error in %s\n",__FUNCTION__);
 					pdd->name[0]='A' + d;
 					pdd->name[1]='A' + c;
 					pdd->name[2]='A' + b;
@@ -125,12 +125,12 @@ int um_multi_record_insert_demo(rdb_pool_t *pool) {
                     // We check that rDB was able to link all indexes. rDB will
                     // simply skip indexes it can not link-in (due to 
                     // duplicates, for example)
-					if (rc!=INDEXES) fatal ("%s: INSERT rc=%d %s\n",__FUNCTION__ , rc, rdb_error_string);
+					if (rc!=INDEXES) rdb_fatal ("%s: INSERT rc=%d %s\n",__FUNCTION__ , rc, rdb_error_string);
 				}
 			}
 		}
 	}
-    info ("we Just completed %.0f insertions (%.0f records  * 4 indexes)\n", pow(LOOPS,4)*4, pow(LOOPS,4));
+    rdb_info ("we Just completed %.0f insertions (%.0f records  * 4 indexes)\n", pow(LOOPS,4)*4, pow(LOOPS,4));
 
     return 0;
 }
@@ -149,26 +149,26 @@ int main(int argc, char *argv[]) {
                             0, //(void *) &dd.age - (void *) dd.name,
                             RDB_KSTR | RDB_KASC | RDB_BTREE,
                             NULL);
-    if (pool == NULL) fatal("pool registration failed\n");
+    if (pool == NULL) rdb_fatal("pool registration failed\n");
 
     // Registering the 3 other indexes for out data structure.
 	if (rdb_register_um_idx(pool,
                             1, 
                             (void *) &dd.address_ptr- (void *) &dd.name,
                             RDB_KPSTR | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) fatal("Failed to register index 1\n");
+                            NULL) == -1) rdb_fatal("Failed to register index 1\n");
 	
     if (rdb_register_um_idx(pool,
                             2, 
                             (void *) &dd.age - (void *) &dd.name,
                             RDB_KUINT32 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) fatal("Failed to register index 2\n");
+                            NULL) == -1) rdb_fatal("Failed to register index 2\n");
 
     if (rdb_register_um_idx(pool,
                             3, 
                             (void *) &dd.long_value - (void *) &dd.name,
                             RDB_KINT64 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) fatal("Failed to register index 3\n");
+                            NULL) == -1) rdb_fatal("Failed to register index 3\n");
 
 
     simple_demo(pool);
@@ -188,39 +188,39 @@ int main(int argc, char *argv[]) {
 
     // Get and Print some records	
     pdd=rdb_get(pool,0,"AAAA");
-	if (pdd!=NULL) info("get: %s %s %d %" PRId64 "\n",pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) rdb_info("get: %s %s %d %" PRId64 "\n",pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"AAAB");
-	if (pdd!=NULL) info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) rdb_info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"BAAA");
-	if (pdd!=NULL) info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) rdb_info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"BAAB");
-	if (pdd!=NULL) info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) rdb_info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
 	pdd=rdb_get(pool,1,"dead");
 	if (pdd!=NULL) {
-        info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
+        rdb_info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     }
-     else info ("filed to find record with value 'dead' in index 1\n");
+     else rdb_info ("filed to find record with value 'dead' in index 1\n");
     
     // This is one way to delete a record. Please note rdb_delete only unlinka
     // data from the tree and return a pointer to it. it DOES NOT free any
     // allocated momory. it's user responsibility to free the pointer(s) or
     // re-link them to a tree.
     
-    info ("Now we delete a record, and repeat the get attempt\n");
+    rdb_info ("Now we delete a record, and repeat the get attempt\n");
     
     pdd=rdb_delete(pool,0,"BAAB");
-	if (pdd!=NULL) info("deleted: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) rdb_info("deleted: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
     pdd=rdb_get(pool,0,"BAAB");
 	if (pdd!=NULL) {
-        info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
+        rdb_info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
-    } else info ("get BAAB failed\n");
+    } else rdb_info ("get BAAB failed\n");
     
     
     // This shows the common way to search for data ... 
@@ -228,13 +228,13 @@ int main(int argc, char *argv[]) {
     // search for.
     int find_me = 500;	
 	pdd=rdb_get(pool,3,&find_me);
-	if (pdd!=NULL) info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) rdb_info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
 	
     // But, at times we need a constant value. This call will allow that.
     // (But for real numbers only, obviously).
     pdd=rdb_get_const(pool,3,501);
-	if (pdd!=NULL) info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
+	if (pdd!=NULL) rdb_info("get: %s %s %d %" PRId64 "\n", pdd->name, pdd->address_ptr,
             pdd->age, pdd->long_value);
    
     // Below is a violation (string is refferance by ponter), compiler will

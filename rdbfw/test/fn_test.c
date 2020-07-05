@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
             }
             break;
         default:
-            info("unknown argument: Usage rdb_test -t<n>\n"
+            rdb_info("unknown argument: Usage rdb_test -t<n>\n"
                 "Possibe tests:\n"
                 "1) test init/close\n"
                 "2) test init/define pools/close\n");

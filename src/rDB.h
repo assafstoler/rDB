@@ -30,35 +30,35 @@ extern "C" {
 
 #ifdef KM
 // Kernel output    
-#define info(b,arg...)  do {     \
+#define rdb_info(b,arg...)  do {     \
     printk("%s: ",__FUNCTION__); \
     printk(b,##arg);            \
     } while (0)
-#define c_info(b,arg...) printk(b,##arg)
-#define fatal(b,arg...) do {    \
+#define rdb_c_info(b,arg...) printk(b,##arg)
+#define rdb_fatal(b,arg...) do {    \
     info(b,##arg);              \
     } while (0)
 
 #else
 // Userspace 
-#define fatal(b,arg...) do {    \
+#define rdb_fatal(b,arg...) do {    \
     fprintf(stderr,b,##arg);    \
     fflush(stderr);             \
     exit(-1);                   \
 } while (0)
 
-#define c_info(b,arg...)  do {    \
+#define rdb_c_info(b,arg...)  do {    \
     fprintf(stdout,b,##arg);    \
     fflush(stdout);             \
     } while (0)
-#define info(b,arg...)  do {    \
+#define rdb_info(b,arg...)  do {    \
         fprintf(stdout, "%20s: ",__FUNCTION__); \
-        c_info(b,##arg); \
+        rdb_c_info(b,##arg); \
     } while (0)
-#define l_info(l,b,arg...)  do {    \
+#define rdb_l_info(l,b,arg...)  do {    \
     if (l==0 || l & DEBUG_FLAGS) { \
         fprintf(stdout, "%20s: ",__FUNCTION__); \
-        c_info(b,##arg); \
+        rdb_c_info(b,##arg); \
     } \
     } while (0)
 #endif

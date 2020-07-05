@@ -24,11 +24,11 @@
 
 #ifdef info
 #undef info
+#endif
 #define info(b,arg...) do {     \
         printf(b,##arg); \
         fflush(stdout);          \
         } while (0);
-#endif
 
 
 
@@ -180,12 +180,12 @@ int compare_custom_2_index(void *a, void *b){
 int simple_demo(rdb_pool_t *pool) {
 
     pdd=malloc(sizeof(demo_data_t));
-    if (!pdd) fatal("fatal: failed allocating data node");
+    if (!pdd) rdb_fatal("fatal: failed allocating data node");
      info("main addr %p\n", pdd);    
 
     // We allocate the address pointer so it can point to a string
      pdd->address_ptr = malloc(64);
-    if (!pdd->address_ptr) fatal("fatal: failed allocating address_pointer");
+    if (!pdd->address_ptr) rdb_fatal("fatal: failed allocating address_pointer");
     info ("address ptr = %p\n", pdd->address_ptr);
 
      strcpy(pdd->name,"Assaf Stoler");
@@ -227,9 +227,9 @@ int um_multi_record_insert_demo(rdb_pool_t *pool) {
                for (c=0; c<LOOPS; c++) {
                     for (d=0; d<LOOPS; d++) {
                          pdd=malloc(sizeof(demo_data_t));
-                         if (pdd==NULL) fatal("Allocation error in %s\n",__FUNCTION__);
+                         if (pdd==NULL) rdb_fatal("Allocation error in %s\n",__FUNCTION__);
                          pdd->address_ptr = calloc(1,16);
-                         if (pdd->address_ptr == NULL) fatal("Allocation error in %s\n",__FUNCTION__);
+                         if (pdd->address_ptr == NULL) rdb_fatal("Allocation error in %s\n",__FUNCTION__);
                          pdd->name[0]='A' + d;
                          pdd->name[1]='A' + c;
                          pdd->name[2]='A' + b;
@@ -248,7 +248,7 @@ int um_multi_record_insert_demo(rdb_pool_t *pool) {
                     // We check that rDB was able to link all indexes. rDB will
                     // simply skip indexes it can not link-in (due to 
                     // duplicates, for example)
-                         if (rc!=INDEXES) fatal ("%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
+                         if (rc!=INDEXES) rdb_fatal ("%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
                     }
                }
           }
@@ -542,9 +542,9 @@ int register_pool_3() {
 
 int register_pools() {
 
-    if (-1 == register_pool_1()) fatal("Failed registring pool 1");
-    if (-1 == register_pool_2()) fatal("Failed registring pool 2");
-    if (-1 == register_pool_3()) fatal("Failed registring pool 3");
+    if (-1 == register_pool_1()) rdb_fatal("Failed registring pool 1");
+    if (-1 == register_pool_2()) rdb_fatal("Failed registring pool 2");
+    if (-1 == register_pool_3()) rdb_fatal("Failed registring pool 3");
     return 0;
 }
 
@@ -556,7 +556,7 @@ int add_test_data (rdb_pool_t *pool, int loops) {
                for (c=0; c<loops; c++) {
                     for (d=0; d<loops; d++) {
                          ptd=malloc(sizeof(test_data_t));
-                         if (ptd==NULL) fatal("Allocation error in %s\n",__FUNCTION__);
+                         if (ptd==NULL) rdb_fatal("Allocation error in %s\n",__FUNCTION__);
                          //printf("%p - ",ptd);
                          ptd->string_ptr = calloc(1,16);
                          if (ptd->string_ptr == NULL) return -1;
@@ -625,7 +625,7 @@ int add_one_test_data (rdb_pool_t *pool, int loops) {
             for (c=0; c<loops; c++) {
                 for (d=0; d<loops; d++) {
                     one_ptd=calloc(1,sizeof(test_data_one_t));
-                    if (one_ptd==NULL) fatal("Allocation error in %s\n",__FUNCTION__);
+                    if (one_ptd==NULL) rdb_fatal("Allocation error in %s\n",__FUNCTION__);
                     one_ptd->string_ptr = calloc(1,16);
                     if (one_ptd->string_ptr == NULL) return -1;
                     one_ptd->string[0]='A' + d;
@@ -794,7 +794,7 @@ int main(int argc, char *argv[]) {
         rdb_init();
         register_pools();
         if (-1 == add_test_data(pool1,loops))
-            fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
+            rdb_fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
 
         if (dump >= IDX_FIFO) {
             // FIFO/LIFO - dump will show address but that's dynamic so not much
@@ -813,7 +813,7 @@ int main(int argc, char *argv[]) {
         rdb_init();
         register_pools();
         if (-1 == add_test_data(pool1,4))
-            fatal("%s", rdb_error_string);
+            rdb_fatal("%s", rdb_error_string);
         info ("%s\n", NULL == (ptd=rdb_get_const(pool1,2, 3)) ? "FAIL" : ptd->string );
         info ("%s\n", NULL == (ptd=rdb_get_const(pool1,4, 3)) ? "FAIL" : ptd->string );
         info ("%s\n", NULL == (ptd=rdb_get_const(pool1,6, 3)) ? "FAIL" : ptd->string );
@@ -900,9 +900,9 @@ int main(int argc, char *argv[]) {
                             NULL);
         if (pool4 == NULL) return -1;
         if (-1 == add_one_test_data(pool4,2))
-            fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
+            rdb_fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
         if (-1 == add_test_data(pool1,2))
-            fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
+            rdb_fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
 //        if (-1 == add_test_data(pool3,2))
 //            fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
         
@@ -1124,12 +1124,12 @@ int main(int argc, char *argv[]) {
         
         rc = rdb_error_value(-1,RDB_TEST_STRING);
         if (rc != -1 || (strcmp (rdb_error_string, RDB_TEST_STRING) != 0)) {
-            fatal ("FAIL");
+            rdb_fatal ("FAIL");
         } 
 
         rdb_error(RDB_TEST_STRING);
         if (strcmp (rdb_error_string, RDB_TEST_STRING) != 0) {
-            fatal ("FAIL");
+            rdb_fatal ("FAIL");
 
         }
 

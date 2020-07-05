@@ -137,7 +137,7 @@ int rdb_error_value (int rv, char *err)
 #endif
 
     if (rdb_error_string == NULL)
-        info ("rdb: failed to Alloc RAM for error message, original error was"
+        rdb_info ("rdb: failed to Alloc RAM for error message, original error was"
                 " \"%s\"\n", err);
     else
         strcpy (rdb_error_string, err);
@@ -162,7 +162,7 @@ void rdb_error (char *err)
 #endif
 
     if (rdb_error_string == NULL)
-        info ("rdb: failed to Alloc RAM for error message, original error was"
+        rdb_info ("rdb: failed to Alloc RAM for error message, original error was"
                 " \"%s\"\n", err);
     else
         strcpy (rdb_error_string, err);
@@ -772,7 +772,7 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
             //searchNext = (void **) pp;
             //key = (void *) searchNext + pool->key_offset[0];
             //info ("%s%s", &key->str, separator);
-            c_info ("%p%s", pp, separator);
+            rdb_c_info ("%p%s", pp, separator);
             pp = pp->right;
         }
     } else if (pool->FLAGS[index] & RDB_BTREE && (pool->FLAGS[index] & RDB_KEYS)) {
@@ -794,47 +794,47 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
 
         switch (pool->FLAGS[index] & RDB_KEYS) {
             case RDB_KPTR:
-                c_info ("%p%s", (void *) key->pStr, separator);
+                rdb_c_info ("%p%s", (void *) key->pStr, separator);
                 break;
 
             case RDB_KPSTR:
-                c_info ("%s%s", key->pStr, separator);
+                rdb_c_info ("%s%s", key->pStr, separator);
                 break;
 
             case RDB_KSTR:
-                c_info ("%s%s", &key->str, separator);
+                rdb_c_info ("%s%s", &key->str, separator);
                 break;
 
             case RDB_KINT8:
-                c_info ("%hhd%s", key->i8, separator);
+                rdb_c_info ("%hhd%s", key->i8, separator);
                 break;
 
             case RDB_KINT16:
-                c_info ("%hd%s", key->i16, separator);
+                rdb_c_info ("%hd%s", key->i16, separator);
                 break;
 
             case RDB_KINT32:
-                c_info ("%ld%s", (long) key->i32, separator);
+                rdb_c_info ("%ld%s", (long) key->i32, separator);
                 break;
 
             case RDB_KINT64:
-                c_info ("%lld%s", (long long int) key->i64, separator);
+                rdb_c_info ("%lld%s", (long long int) key->i64, separator);
                 break;
 
             case RDB_KUINT8:
-                c_info ("%hhu%s", key->u8, separator);
+                rdb_c_info ("%hhu%s", key->u8, separator);
                 break;
 
             case RDB_KUINT16:
-                c_info ("%hu%s", key->u16, separator);
+                rdb_c_info ("%hu%s", key->u16, separator);
                 break;
 
             case RDB_KUINT32:
-                c_info ("%lu%s", (unsigned long) key->u32, separator);
+                rdb_c_info ("%lu%s", (unsigned long) key->u32, separator);
                 break;
 
             case RDB_KUINT64:
-                c_info ("%llu%s", (unsigned long long) key->u64, separator);
+                rdb_c_info ("%llu%s", (unsigned long long) key->u64, separator);
                 break;
 
             //TODO: this is a bug, data below may be truncated.
@@ -842,24 +842,24 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
             //
 #ifdef USE_128_BIT_TYPES
             case RDB_KUINT128:
-                c_info ("%llu%s", (unsigned long long) key->u128, separator);
+                rdb_c_info ("%llu%s", (unsigned long long) key->u128, separator);
                 break;
 
             case RDB_KINT128:
-                c_info ("%lld%s", (long long) key->u128, separator);
+                rdb_c_info ("%lld%s", (long long) key->u128, separator);
                 break;
 #endif
             case RDB_KSIZE_t:
-                c_info ("%zu%s", (size_t) key->st, separator);
+                rdb_c_info ("%zu%s", (size_t) key->st, separator);
                 break;
 
             case RDB_KSSIZE_t:
-                c_info ("%zd%s", (ssize_t) key->sst, separator);
+                rdb_c_info ("%zd%s", (ssize_t) key->sst, separator);
                 break;
             // we can't print custom functions data so we print the address
             // TODO: Consider adding a print-to-str fn() hook to pool, so we can dump custom-index data
             case RDB_KCF:
-                c_info ("%p%s", key, separator);
+                rdb_c_info ("%p%s", key, separator);
                 break;
  /*           case RDB_KTME:
                 printoutalways ("Dump_TME: %ld:%ld\n", key->tv.tv_sec, key->tv.tv_usec);
