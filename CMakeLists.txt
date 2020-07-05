@@ -83,8 +83,8 @@ add_library(rdb_beta STATIC ${rdb_beta_SRCS} ${rdb_beta_INC})
 INCLUDE_DIRECTORIES(${CMAKE_SRC_DIR}/src)
 set_target_properties(rdb_beta PROPERTIES PUBLIC_HEADER "src/rDB.h")
 INSTALL(TARGETS rdb_beta
-        LIBRARY DESTINATION /usr/local/lib
-        PUBLIC_HEADER DESTINATION /usr/local/include/rdb
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_PREFIX}/include/rdb
 )
 
 add_subdirectory(demo)

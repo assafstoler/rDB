@@ -13,15 +13,15 @@ add_executable ( fn_test fn_test.c ../utils.c )
 target_link_libraries( fn_test m )
 target_include_directories ( fn_test PRIVATE $<TARGET_PROPERTY:rdbfwlib,INCLUDE_DIRECTORIES> )
 INSTALL(TARGETS fn_test
-        DESTINATION /usr/local/bin
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
 )
 
 ADD_LIBRARY ( event_skeleton SHARED event_driven_skeleton.c )
 target_link_libraries ( event_skeleton PRIVATE pthread dl rdb_beta )
 target_include_directories ( event_skeleton PRIVATE $<TARGET_PROPERTY:rdbfwlib,INCLUDE_DIRECTORIES> )
 INSTALL(TARGETS event_skeleton
-    LIBRARY DESTINATION /usr/local/lib
-    PUBLIC_HEADER DESTINATION /usr/local/include/rdbfw
+    LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_PREFIX}/include/rdbfw
     )
 
 
@@ -29,7 +29,7 @@ add_executable ( fw_test fw_test.c )
 #target_include_directories(fw_test PRIVATE ${HEADERS})
 target_link_libraries(fw_test m rdb_beta rt rdbfwlib)
 INSTALL(TARGETS fw_test
-    DESTINATION /usr/local/bin
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
     )
 
 

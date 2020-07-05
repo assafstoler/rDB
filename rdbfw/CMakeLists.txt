@@ -112,8 +112,8 @@ endif()
 
 set_target_properties(rdbfwlib PROPERTIES PUBLIC_HEADER "rdbfw.h;log.h;ansi.h;fwalloc.h;messaging.h;utils.h")
 INSTALL(TARGETS rdbfwlib hw_timers timers
-        LIBRARY DESTINATION /usr/local/lib
-        PUBLIC_HEADER DESTINATION /usr/local/include/rdbfw
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_PREFIX}/include/rdbfw
 )
 
 add_subdirectory(test)
