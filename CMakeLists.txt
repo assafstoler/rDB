@@ -48,6 +48,11 @@ set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -fPIC -fms-extensions")
 set(CMAKE_CXX_FLAGS_DEBUG "-Wall -O0 -g")
 set(CMAKE_CXX_FLAGS_RELEASE "-Wall -O3")
 
+if(NOT DEFINED "SKIP_KERNEL")
+    set(SKIP_KERNEL "false")
+endif()
+
+
 include_directories("${PROJECT_SOURCE_DIR}/src")
 
 link_directories(
@@ -94,7 +99,9 @@ message ("libdir==${CMAKE_INSTALL_PREFIX}")
 add_subdirectory(demo)
 add_subdirectory(rdbfw)
 add_subdirectory(test)
-add_subdirectory(kernel)
+if (NOT ${SKIP_KERNEL})
+    add_subdirectory(kernel)
+endif()
 
 enable_testing()
 
