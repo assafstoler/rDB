@@ -13,5 +13,6 @@ target_include_directories (cpp_helpers PRIVATE $<TARGET_PROPERTY:rdbfwlib,INCLU
 
 set_target_properties(cpp_helpers PROPERTIES PUBLIC_HEADER "model_cpp_interface.h;model_cpp.h")
 INSTALL(TARGETS cpp_helpers
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
         PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_PREFIX}/include/rdbfw
 )

@@ -84,8 +84,12 @@ INCLUDE_DIRECTORIES(${CMAKE_SRC_DIR}/src)
 set_target_properties(rdb_beta PROPERTIES PUBLIC_HEADER "src/rDB.h")
 INSTALL(TARGETS rdb_beta
         LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
         PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_PREFIX}/include/rdb
 )
+
+message ("libdir==${CMAKE_INSTALL_LIBDIR}")
+message ("libdir==${CMAKE_INSTALL_PREFIX}")
 
 add_subdirectory(demo)
 add_subdirectory(rdbfw)

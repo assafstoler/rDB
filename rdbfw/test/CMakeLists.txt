@@ -1,10 +1,3 @@
-find_program(
-    MEMORYCHECK_COMMAND
-    valgrind )
-set( MEMORYCHECK_COMMAND_OPTIONS "--leak-check=full" )
-
-message (${MEMORYCHECK_COMMAND})
-
 project ( rdbfw_test )
 include ( CTest )
 
