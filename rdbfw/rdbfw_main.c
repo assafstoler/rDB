@@ -42,6 +42,7 @@ FILE *logger = NULL;
 char out_path[255] = {0};
 int unittest_en = 0;
 int local_libs = 0;
+char *lib_prefix = NULL;
 char log_log_buf[256];
 char sig_log_buf[256];
 const char *rdbfw_app_name = NULL;
@@ -187,6 +188,19 @@ static int load_plugin_cb (void *data, void *user_ptr) {
             //eptr=dlerror();
             goto load_plugin_cb_err;
         }
+    }
+    if ( p->cpp ) {
+        if (( p->cpp_plugin_info.init == NULL ) ||
+                ((eptr = dlerror()) != NULL))  {
+            fwl (LOG_ERROR, p, "failed dlsym() : %s - %s\n", eptr, buf);
+            eptr=dlerror();
+            goto load_plugin_cb_err;
+        }
+    }
+    else if ((p->plugin_info == NULL) || ((eptr = dlerror()) != NULL))  {
+        fwl (LOG_ERROR, p, "failed dlsym() : %s - %s\n", eptr, buf);
+        eptr=dlerror();
+        goto load_plugin_cb_err;
     }
 
     free(buf);
@@ -586,19 +600,9 @@ int register_plugin(
 #ifdef __MACH__
     //TODO: Add auto prefix assignment if bundle_path == NULL
     strcpy (plugin_node->pathname, bundle_path);
-    if (local_libs) {
-        strcat (plugin_node->pathname, PLUGIN_LCL_LIB_PREFIX);
-    }
-    else {
-        strcat (plugin_node->pathname, PLUGIN_LIB_PREFIX);
-    }
+    strcat (plugin_node->pathname, lib_prefix);
 #else
-    if (local_libs) {
-        strcpy (plugin_node->pathname, PLUGIN_LCL_LIB_PREFIX);
-    }
-    else {
-        strcpy (plugin_node->pathname, PLUGIN_LIB_PREFIX);
-    }
+    strcpy (plugin_node->pathname, lib_prefix);
 #endif
     strcat (plugin_node->pathname, name);
     strcat (plugin_node->pathname, PLUGIN_LIB_SUFFIX);
@@ -1029,10 +1033,13 @@ int rdbfw_main(int argc, char *argv[], char *app_name)
     }
     const char* lib_str = getenv("RDBFW_LOCAL_LIB");
     if (NULL != lib_str) {
-        local_libs = 1;
+        lib_prefix = PLUGIN_LCL_LIB_PREFIX;
         fwl (LOG_INFO, NULL, "using ./ Library PATH\n");
     }
-    else fwl (LOG_INFO, NULL, "NOT using ./ Library PATH\n");
+    else {
+        fwl (LOG_INFO, NULL, "NOT using ./ Library PATH\n");
+        lib_prefix = PLUGIN_LIB_PREFIX;
+    }
 
 
     // initilize the rDB library

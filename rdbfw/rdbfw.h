@@ -177,6 +177,7 @@ extern const char *rdbfw_app_name;
 
 extern uint32_t log_level;
 extern pthread_mutex_t  log_mutex;
+extern char *lib_prefix;
 
 // Module Linkage
 

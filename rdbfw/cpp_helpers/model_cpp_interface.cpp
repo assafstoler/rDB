@@ -26,7 +26,7 @@ typedef Model *(*ModelMakerPtr)();
 // It is very important that between compiler version updates that you convince
 // yourself that this pointer mangling is behaving as expected.
 Model* constructModel(const char *libName) {
-    std::string libLoc = "/usr/lib/";
+    std::string libLoc;
     libLoc = libLoc + std::string(libName);
     std::cout << "Opening: " << libLoc << std::endl;
 
