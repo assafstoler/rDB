@@ -57,19 +57,19 @@ int rdbfw_app_register_plugins( rdb_pool_t *plugin_pool/*, int argc, char **argv
     // Register plugins
 
     if ( unittest_en == UT_REG_PLUGIN_1 ||
-            -1 == register_plugin("timers", plugin_pool, 1000, CTX_SINGULAR, C_MODULE) ) {
+            -1 == register_plugin("timers", plugin_pool, 1000, CTX_SINGULAR, C_MODULE, NULL) ) {
         fwl (LOG_ERROR, NULL, "Failed to register plugin. Aborting\n");
         return -1;
     }
     
     if ( unittest_en == UT_REG_PLUGIN_1 ||
-            -1 == register_plugin("event_skeleton", plugin_pool, 1000, CTX_SINGULAR, C_MODULE) ) {
+            -1 == register_plugin("event_skeleton", plugin_pool, 1000, CTX_SINGULAR, C_MODULE, NULL) ) {
         fwl (LOG_ERROR, NULL, "Failed to register plugin. Aborting\n");
         return -1;
     }
     
     if ( unittest_en == UT_REG_PLUGIN_2 &&
-            -1 == register_plugin("mdl_tester", plugin_pool, 10, CTX_SINGULAR, C_MODULE) ) {
+            -1 == register_plugin("mdl_tester", plugin_pool, 10, CTX_SINGULAR, C_MODULE, NULL) ) {
         fwl (LOG_ERROR, NULL, "Failed to register plugin. Aborting\n");
         return -1;
     }

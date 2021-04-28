@@ -158,7 +158,8 @@ int register_plugin(
         rdb_pool_t *plugin_pool,
         int msg_slots,
         uint32_t req_ctx_id,
-        int cpp
+        int cpp,
+        char *library_name_override
         );
 
 void rdbfw_app_help(void);
@@ -170,6 +171,7 @@ void rdbfw_update_state (plugins_t *ctx, rdbfw_plugin_state_e state);
 int rdbfw_is_running (void);
 int rdbfw_stop (void);
 int rdbfw_wait (void);
+int rdbfw_add_debug_flag (int flag);
 //int fwl (int level, void *p, ...);
 
 extern rdb_pool_t *plugin_pool;

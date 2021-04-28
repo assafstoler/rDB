@@ -24,6 +24,7 @@
 #include <stdio.h>
 
 extern uint32_t log_level;
+extern uint32_t DEBUG_FLAGS;
 extern pthread_mutex_t  log_mutex;
 
 extern char log_log_buf[256];
@@ -50,7 +51,6 @@ static const int64_t reducer = 1563000000;
 
 #define LEVELS 0x7
 #define LOG_FLAGS 0xFFFFFFF8
-#define DEBUG_FLAGS ( 0 )
 
 
 #define fwlog_no_emit fwlog

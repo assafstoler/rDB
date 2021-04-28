@@ -48,6 +48,7 @@ char sig_log_buf[256];
 const char *rdbfw_app_name = NULL;
 
 uint32_t log_level = LOG_WARN;
+uint32_t DEBUG_FLAGS = 0;
 pthread_mutex_t  log_mutex;
 
 static int automated_test  = 0;
@@ -136,7 +137,6 @@ static int load_plugin_cb (void *data, void *user_ptr) {
     
     if (unittest_en == UT_LOAD_PLUGIN_1 || p->state != RDBFW_STATE_NULL) {
         fwl (LOG_ERROR, p, "called while plugin %s is loaded", p->name);
-        //goto load_plugin_cb_err;
         return RDB_CB_OK;
     }
 
@@ -148,12 +148,12 @@ static int load_plugin_cb (void *data, void *user_ptr) {
 #ifdef STATIC_BUILD
         p->handle = dlopen (NULL , RTLD_LAZY| RTLD_GLOBAL);
 #else
+        fwl (LOG_TRACE, p, "attempting to load plugin (dlopen()) %s - %s\n", p->pathname, eptr);
         p->handle = dlopen (p->pathname , RTLD_LAZY| RTLD_GLOBAL);
 #endif
         if (p->handle == NULL) {
             eptr = dlerror();
-            fwl (LOG_ERROR, p, "failed to load plugin %s - %s\n", p->pathname, eptr);
-            //eptr=dlerror();
+            fwl (LOG_ERROR, p, "failed to load plugin (dlopen()) %s - %s\n", p->pathname, eptr);
             goto load_plugin_cb_err;
         }
     }
@@ -185,7 +185,6 @@ static int load_plugin_cb (void *data, void *user_ptr) {
         if ((p->plugin_info == NULL) ||
                 ((eptr = dlerror()) != NULL))  {
             fwl (LOG_ERROR, p, "failed dlsym() : %s - %s\n", eptr, buf);
-            //eptr=dlerror();
             goto load_plugin_cb_err;
         }
     }
@@ -535,7 +534,8 @@ int register_plugin(
         rdb_pool_t *plugin_pool,
         int msg_slots,
         uint32_t req_ctx_id,
-        int cpp
+        int cpp,
+        char *library_name_override
         ) {
     plugins_t *plugin_node;
     uint32_t ctx_id;
@@ -546,7 +546,7 @@ int register_plugin(
     if (name == NULL) {
         goto register_plugin_err;
     }
-    //TODO: why is +100 here. verify and re-drop to +1 (came from cpp merga)
+    //TODO: why is +100 here. verify and re-drop to +1 (came from cpp merge)
     buf = malloc(strlen(name) + PLUGIN_NAME_SUFFIX_MAX + 100) ;
     if (buf == NULL) {
         goto register_plugin_err;
@@ -586,9 +586,19 @@ int register_plugin(
     sprintf(plugin_node->uname, "%s.%"PRIu32"", name, ctx_id);
 
 #ifdef __MACH__
-    plugin_node->pathname = malloc(PLUGIN_LIB_PREFIX_LEN + strlen(name) + strlen(bundle_path) + PLUGIN_LIB_SUFFIX_LEN + 1) ;
+    if (library_name_override) {
+        plugin_node->pathname = malloc(PLUGIN_LIB_PREFIX_LEN + strlen(name) + strlen(bundle_path) + PLUGIN_LIB_SUFFIX_LEN + 1) ;
+    }
+    else {
+        plugin_node->pathname = malloc(PLUGIN_LIB_PREFIX_LEN + strlen(library_name_override) + strlen(bundle_path) + PLUGIN_LIB_SUFFIX_LEN + 1) ;
+    }
 #else
-    plugin_node->pathname = malloc(PLUGIN_LIB_PREFIX_LEN + strlen(name) + PLUGIN_LIB_SUFFIX_LEN + 1) ;
+    if (library_name_override) {
+        plugin_node->pathname = malloc(PLUGIN_LIB_PREFIX_LEN + strlen(library_name_override) + PLUGIN_LIB_SUFFIX_LEN + 1) ;
+    }
+    else {
+        plugin_node->pathname = malloc(PLUGIN_LIB_PREFIX_LEN + strlen(name) + PLUGIN_LIB_SUFFIX_LEN + 1) ;
+    }
 #endif
     if (plugin_node->pathname == NULL) {
         free (plugin_node->name);
@@ -604,7 +614,12 @@ int register_plugin(
 #else
     strcpy (plugin_node->pathname, lib_prefix);
 #endif
-    strcat (plugin_node->pathname, name);
+    if (library_name_override) {
+        strcat (plugin_node->pathname, library_name_override);
+    } 
+    else {
+        strcat (plugin_node->pathname, name);
+    }
     strcat (plugin_node->pathname, PLUGIN_LIB_SUFFIX);
 
     plugin_node->plugin_info = NULL;
@@ -982,7 +997,16 @@ void *rdbfw_main_loop (void *plugin_pool) {
     pthread_exit (NULL);
 }
 
-int rdbfw_main(int argc, char *argv[], char *app_name)
+int rdbfw_add_debug_flag (int flag) {
+    if (flag <= DF_UT || flag >=32) {
+        fwl (LOG_ERROR, NULL, "Attempt to enable out-of-range debug flag\n");
+        return -1;
+    }
+    DEBUG_FLAGS = DEBUG_FLAGS | flag;
+    return 0;
+}
+
+int rdbfw_main (int argc, char *argv[], char *app_name)
 {
     int rc;
     int show_help = 0;
