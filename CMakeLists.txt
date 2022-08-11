@@ -1,11 +1,11 @@
 cmake_minimum_required (VERSION 2.8)
 project (rDB)
 
-SET(rdb_beta_SRCS
-   src/rDB.c
+SET(rdb_SRCS
+   src/rdb.c
 )
-SET(rdb_beta_INC
-   src/rDB.h
+SET(rdb_INC
+   src/rdb.h
 )
 macro(use_c99)
   if (CMAKE_VERSION VERSION_LESS "3.1")
@@ -82,12 +82,12 @@ endif (${USE_128_BIT_TYPES})
 
 ADD_DEFINITIONS(-DRDB_POOL_COUNTERS)
 
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -g -O0 -export-dynamic")
-add_library(rdb_beta STATIC ${rdb_beta_SRCS} ${rdb_beta_INC})
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -g -export-dynamic")
+add_library(rdb STATIC ${rdb_SRCS} ${rdb_INC})
 
 INCLUDE_DIRECTORIES(${CMAKE_SRC_DIR}/src)
-set_target_properties(rdb_beta PROPERTIES PUBLIC_HEADER "src/rDB.h")
-INSTALL(TARGETS rdb_beta
+set_target_properties(rdb PROPERTIES PUBLIC_HEADER "src/rdb.h")
+INSTALL(TARGETS rdb
         LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
         ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
         PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_PREFIX}/include/rdb
@@ -97,7 +97,7 @@ message ("libdir==${CMAKE_INSTALL_LIBDIR}")
 message ("libdir==${CMAKE_INSTALL_PREFIX}")
 
 add_subdirectory(demo)
-add_subdirectory(rdbfw)
+#add_subdirectory(rdbfw)
 add_subdirectory(test)
 if (NOT ${SKIP_KERNEL})
     add_subdirectory(kernel)

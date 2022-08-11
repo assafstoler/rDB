@@ -41,7 +41,7 @@
 #include <net/genetlink.h>
 #include <linux/semaphore.h>
 #include <linux/vmalloc.h>
-#include "rDB.h"
+#include "rdb.h"
 
 #define rdb_free(a) kfree(a)
 #define rdb_alloc(a) kmalloc (a, GFP_KERNEL);
@@ -53,7 +53,7 @@
 #include <stdlib.h>                             //exit,
 #include <string.h>                             //strcmp,
 #include <pthread.h>
-#include "rDB.h"
+#include "rdb.h"
 
 #define rdb_free(a) free(a)
 #define rdb_alloc(a) malloc (a);

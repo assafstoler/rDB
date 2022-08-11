@@ -10,7 +10,7 @@
 #include <inttypes.h>
 #include <pthread.h>
 #include <time.h>
-#include "rDB.h"
+#include "rdb.h"
 
 // On how many indexes we would refferance our demo data.
 // the use of define here is not required and done for conveniance only

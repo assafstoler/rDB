@@ -1,10 +1,10 @@
-obj-m = rDB.o
+obj-m = rdb.o
 
 
 ccflags-y := -Wno-strict-prototypes -DKM -DUSE_128_BIT_TYPES
 
 
-TARGET  := rDB
+TARGET  := rdb
 WARN    := -W -Wall -Wno-strict-prototypes
 	
 ${TARGET}.o: ../src/${TARGET}.c
