@@ -254,7 +254,7 @@ int         rdb_lock(rdb_pool_t *pool, const char *parent);
 void         rdb_unlock(rdb_pool_t *pool, const char *parent);
 int         rdb_insert (rdb_pool_t *pool, void *data);
 int         rdb_insert_one (rdb_pool_t *pool, int index, void *data);
-void       *rdb_get (rdb_pool_t *pool, int idx, void *data);
+void       *rdb_get (rdb_pool_t *pool, int idx, const void *data);
 void       *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value);
 void       *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after);
 void        rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),

@@ -1295,7 +1295,7 @@ int rdb_insert_one (rdb_pool_t *pool, int index, void *data)
 void   *_rdb_get (
         rdb_pool_t  *pool, 
         int         index, 
-        void        *data, 
+        const void  *data, 
         void        *start, 
         int         partial) {
 
@@ -1405,7 +1405,7 @@ void   *_rdb_get_const (
 
 // Find requested data set and return a pointer to it
 // As a special case, if data = null, root node will be returned.
-void   *rdb_get (rdb_pool_t *pool, int idx, void *data)
+void   *rdb_get (rdb_pool_t *pool, int idx, const void *data)
 {
     debug("Get:pool=%s,idx=%d", pool->name, idx);
     return _rdb_get (pool, idx, data, NULL, 0);
