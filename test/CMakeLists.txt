@@ -8,7 +8,7 @@ include_directories ("${PROJECT_SOURCE_DIR}/src")
 
 link_directories ("${PROJECT_SOURCE_DIR}/")
 
-link_libraries (rdb_beta)
+link_libraries (rdb)
 
 #set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -O0 -export-dynamic -avoid-version -g")
  
