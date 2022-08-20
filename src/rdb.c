@@ -385,7 +385,7 @@ rdb_pool_t *rdb_add_pool (
         return NULL;
     }
 
-    strncpy (pool->name, poolName, name_length);
+    strncpy (pool->name, poolName, name_length+1); //+1 to shut compiler warning on some systems, even though we overwrite it to ensure terminating null.
     pool->name[name_length] = 0;
     
     if (-1 == set_pool_fn_pointers(pool, 0, FLAGS, compare_fn)){
