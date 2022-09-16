@@ -447,7 +447,7 @@ rdb_pool_t *rdb_register_um_pool (
 // Remove rDB traces. use before exit() or when rDB no longer needed.
 // Use rdb_init after, to re_start rDB
 
-// rdb_gc: drop pools that ae marged for dropping. pools must be empty first.
+// rdb_gc: drop pools that are marked for dropping. pools must be empty first.
 void rdb_gc() {
     rdb_clean(1);
 }
