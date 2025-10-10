@@ -63,11 +63,11 @@ extern "C" {
     } while (0)
 #endif
 
-#ifdef KM
-#define error(b,arg...) printk(b,##arg)
-#else
-#define error(b,arg...) do { fprintf(stderr, "%20s:%d: ",__FUNCTION__,__LINE__); fprintf(stderr,b,##arg); fflush(stderr); } while (0)
-#endif
+//#ifdef KM
+//#define rdb_error(b,arg...) printk(b,##arg)
+//#else
+//#define rdb_error(b,arg...) do { fprintf(stderr, "%20s:%d: ",__FUNCTION__,__LINE__); fprintf(stderr,b,##arg); fflush(stderr); } while (0)
+//#endif
 
 //#define RDB_LOCK_DEBUG
 

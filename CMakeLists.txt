@@ -90,13 +90,9 @@ set(RDBLIB_VERSION_MINOR 0)
 set(RDBLIB_VERSION_PATCH 0)
 set(RDBLIB_VERSION_STRING ${RDBLIB_VERSION_MAJOR}.${RDBLIB_VERSION_MINOR}.${RDBLIB_VERSION_PATCH})
 
-if( CMAKE_SIZEOF_VOID_P EQUAL 8 )
-    set(LIBSUFFIX 64)
-else()
-    set(LIBSUFFIX "")
-    #set(CMAKE_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR}64)
-endif()
-set(INSTALL_LIB_DIR     lib${LIBSUFFIX} CACHE PATH "Installation directory for libraries")
+
+set(CMAKE_INSTALL_PREFIX /usr)
+set(INSTALL_LIB_DIR     lib CACHE PATH "Installation directory for libraries")
 mark_as_advanced(INSTALL_LIB_DIR)
 
 

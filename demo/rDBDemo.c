@@ -72,7 +72,7 @@ int simple_demo(rdb_pool_t *pool) {
 
     // Data node is added to the tree, and Indexed.
  	if (rdb_insert(pool,pdd) != INDEXES) 
-        error("one or more index failed insertion\n");
+        rdb_error("one or more index failed insertion\n");
 
  	rdb_info("We will now dump the tree, containing one record\n");
     rdb_dump(pool,1,"\n");
