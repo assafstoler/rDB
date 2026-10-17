@@ -710,7 +710,8 @@ void rdb_clean(int gc) {
         rdb_error_string = NULL;
     }
 
-    pool_root = NULL;
+    if (!gc)
+        pool_root = NULL;
 
     return ;
 }
