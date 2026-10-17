@@ -128,12 +128,6 @@ static uint32_t rdb_init_flags;
 
 char      *rdb_error_string = NULL;
 
-// used to calculate tree depth by dump Fn()
-int     levels,
-        maxLevels;
-
-
-
 #ifdef KM
 struct semaphore reg_mutex;
 struct semaphore rdb_error_mutex;
@@ -1095,13 +1089,20 @@ int key_cmp_const_str_p (char **old, char *new)
     return;
 }
 
+// Per-call state: locking one pool cannot protect counters shared by all pools.
+struct dump_state {
+    int levels;
+    int max_levels;
+};
+
 // TODO: Bring this up-to-date
 // Note: type casting used to 
 // 1) hash compiler about identcal type warnings, like 
 // uint32 and unisnged long ...
 // 2) handle int32 as long, since long is 32 bit on 16, 32 and 64 bit machines
 //
-void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
+static void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start,
+                       struct dump_state *state)
 {
     void  **searchNext;
     PP_T   *pp;
@@ -1110,12 +1111,12 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
     if (start == NULL && pool->root[index] == NULL) return;
 
     if (start == NULL)
-        maxLevels = 1;
+        state->max_levels = 1;
     else
-        levels++;
+        state->levels++;
 
-    if (levels > maxLevels)
-        maxLevels = levels;
+    if (state->levels > state->max_levels)
+        state->max_levels = state->levels;
 
     if (pool->FLAGS[index] & RDB_BTREE && (pool->FLAGS[index] & RDB_NOKEYS))  {
         pp = ((void *) (pool->root[index])) + (sizeof (PP_T) * index) ;    // print data-head
@@ -1139,8 +1140,8 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
         key = (void *) searchNext + pool->key_offset[index];
 
         if (pp->left != NULL) {
-            _rdb_dump (pool, index, separator, pp->left);
-            levels--;
+            _rdb_dump (pool, index, separator, pp->left, state);
+            state->levels--;
         }
 
         switch (pool->FLAGS[index] & RDB_KEYS) {
@@ -1234,13 +1235,13 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
 #endif
 
         if (pp->right != NULL) {
-            _rdb_dump (pool, index, separator, pp->right);
-            levels--;
+            _rdb_dump (pool, index, separator, pp->right, state);
+            state->levels--;
         }
     }
 
     if (start == NULL)
-        debug ("Final Level=%d\n", maxLevels);
+        debug ("Final Level=%d\n", state->max_levels);
 
 }
 
@@ -1272,8 +1273,10 @@ void rdb_dump (rdb_pool_t *pool, int index, char *separator) {
 
     if (pool->fault.code || pool->root[index] == NULL) return;
 
-    if ((pool->FLAGS[index] & (RDB_KEYS | RDB_NOKEYS)) != 0)
-        _rdb_dump (pool, index, separator, NULL);
+    if ((pool->FLAGS[index] & (RDB_KEYS | RDB_NOKEYS)) != 0) {
+        struct dump_state state = {0};
+        _rdb_dump (pool, index, separator, NULL, &state);
+    }
 }
 
 int _rdb_insert (

@@ -396,6 +396,7 @@ void        rdb_print_pools(void *fp);
 char       *rdb_print_pool_stats (char *buf, int max_len);
 
 //void        _rdb_dump (rdb_pool_t *, int index, void *start);
+// Traversal state is local to each call; concurrent stdout output may interleave.
 void        rdb_dump (rdb_pool_t *pool, int index, char *separator);
 
 int         key_cmp_str (char *old, char *);
