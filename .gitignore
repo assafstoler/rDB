@@ -6,3 +6,4 @@ CMakeFiles*
 Testing/
 .vscode*
 *.code-workspace
+/build/

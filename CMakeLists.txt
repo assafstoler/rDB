@@ -122,10 +122,11 @@ message ("libdir==${CMAKE_INSTALL_PREFIX}")
 
 add_subdirectory(demo)
 #add_subdirectory(rdbfw)
-add_subdirectory(test)
+include(CTest)
+if(BUILD_TESTING)
+    add_subdirectory(test)
+endif()
 if (NOT ${SKIP_KERNEL})
     add_subdirectory(kernel)
 endif()
-
-enable_testing()
 
