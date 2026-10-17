@@ -130,3 +130,7 @@ if (NOT ${SKIP_KERNEL})
     add_subdirectory(kernel)
 endif()
 
+# Instrument completed targets only in an explicitly selected coverage build.
+include(cmake/TealCoverage.cmake)
+teal_enable_coverage("${CMAKE_CURRENT_SOURCE_DIR}/tests/coverage.json")
+

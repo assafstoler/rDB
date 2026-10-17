@@ -102,6 +102,17 @@ if(TARGET rdb_error_tests)
     add_test (NAME rdb_error_tests COMMAND rdb_error_tests)
 endif()
 
+find_program(RDB_TEST_PYTHON NAMES python3)
+if(RDB_TEST_PYTHON)
+    add_test(NAME coverage_runner_tests COMMAND "${RDB_TEST_PYTHON}" -B
+        "${CMAKE_SOURCE_DIR}/tests/test_coverage_runner.py")
+    set_tests_properties(coverage_runner_tests PROPERTIES TIMEOUT 120)
+    if(TEAL_COVERAGE_GCOVR)
+        set_tests_properties(coverage_runner_tests PROPERTIES
+            ENVIRONMENT "TEAL_TEST_GCOVR=${TEAL_COVERAGE_GCOVR}")
+    endif()
+endif()
+
 add_test (rdb_test_init_clean rdb_test -t1)
 set_tests_properties (rdb_test_init_clean
     PROPERTIES PASS_REGULAR_EXPRESSION "^Ok\n$")

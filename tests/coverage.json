@@ -1,0 +1,8 @@
+{
+  "project": "rDB",
+  "filter": "^src/",
+  "limits": [
+    "User-space library only; kernel module and interactive demo are outside this report.",
+    "Counts describe executed code, not assertion quality."
+  ]
+}

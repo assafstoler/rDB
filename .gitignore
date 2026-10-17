@@ -7,3 +7,5 @@ Testing/
 .vscode*
 *.code-workspace
 /build/
+!cmake/TealCoverage.cmake
+__pycache__/

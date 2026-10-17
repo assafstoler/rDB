@@ -1,0 +1,7 @@
+{
+  "project": "fixture",
+  "filter": "^lib.*\\.c$",
+  "limits": [
+    "Synthetic coverage-tool regression fixture."
+  ]
+}
