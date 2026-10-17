@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -106,7 +107,8 @@ class CoverageRunnerTests(unittest.TestCase):
 
     def simulated_run(self, *, gcov_version="gcov (GCC) 13.3.0",
                       gcovr_version="gcovr 8.6", junit=None, counters=True,
-                      config_text=None, sources=None, library_dirs=()):
+                      config_text=None, sources=None, library_dirs=(),
+                      measured_sources=None, jobs=1, render_failure=None, report_barrier=None):
         """Test runner failure accounting; the real-compiler test stays separate."""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -122,7 +124,7 @@ class CoverageRunnerTests(unittest.TestCase):
                 "file": "src/one.c", "arguments": ["cc", "--coverage", "-O0"]}]))
             args = SimpleNamespace(source=source, build=build, config=config,
                 compiler="compiler", gcov="gcov", gcovr="gcovr", ctest="ctest",
-                optimization="-O0", jobs=1, library_dir=library_dirs)
+                optimization="-O0", jobs=jobs, library_dir=library_dirs)
 
             def capture(argv):
                 return {"compiler": "13.3.0", "gcov": gcov_version,
@@ -137,12 +139,20 @@ class CoverageRunnerTests(unittest.TestCase):
                         target = Path(env["GCOV_PREFIX"]) / build.relative_to(build.anchor)
                         (target / "one.gcda").write_bytes(b"fixture counters")
                 else:
+                    files = [{"file": name} for name in (measured_sources or ["src/one.c"])]
+                    if "--add-tracefile" in argv:
+                        files = json.loads(Path(argv[argv.index("--add-tracefile") + 1]).read_text())["files"]
+                        if report_barrier:
+                            report_barrier.wait(timeout=3)
+                        if path.parent.name == render_failure:
+                            return 1
+                    count = len(files)
                     Path(argv[argv.index("--json-summary") + 1]).write_text(json.dumps({
-                        "line_total": 1, "line_covered": 1, "line_percent": 100,
-                        "function_total": 1, "function_covered": 1, "function_percent": 100,
-                        "branch_total": 2, "branch_covered": 2, "branch_percent": 100}))
+                        "line_total": count, "line_covered": count, "line_percent": 100,
+                        "function_total": count, "function_covered": count, "function_percent": 100,
+                        "branch_total": 2 * count, "branch_covered": 2 * count, "branch_percent": 100}))
                     Path(argv[argv.index("--json") + 1]).write_text(json.dumps({
-                        "files": [{"file": "src/one.c"}]}))
+                        "files": files}))
                 return 0
 
             with mock.patch.object(runner, "git_metadata", return_value={}), \
@@ -155,6 +165,94 @@ class CoverageRunnerTests(unittest.TestCase):
             report = build / "coverage-report"
             self.assertTrue(report.is_symlink())
             return result, json.loads((report / "run.json").read_text()), commands.call_count
+
+    @staticmethod
+    def grouped_config():
+        return {"project": "fixture", "filter": "^(src|tools)/", "reports": [
+            {"id": "runtime", "title": "Runtime", "filter": "^src/"},
+            {"id": "tools", "title": "Tools", "filter": "^tools/"}]}
+
+    def test_report_partition_owns_each_file_once_including_unbuilt_sources(self):
+        config = self.grouped_config()
+        trace = {"gcovr/format_version": "test", "files": [
+            {"file": "src/module.cpp"}, {"file": "tools/editor.cpp"}]}
+        groups = runner.partition_reports(config, trace, ["src/module.cpp", "src/unbuilt.cpp"])
+        self.assertEqual(groups["runtime"]["trace"]["files"], [{"file": "src/module.cpp"}])
+        self.assertEqual(groups["tools"]["trace"]["files"], [{"file": "tools/editor.cpp"}])
+        self.assertEqual(groups["runtime"]["trace"]["gcovr/format_version"], "test")
+        self.assertEqual(groups["runtime"]["unmeasured_sources"], ["src/unbuilt.cpp"])
+        self.assertEqual(len(trace["files"]), 2)  # The collected snapshot is not mutated.
+        for pattern in ("^", "^missing/"):
+            config["reports"][0]["filter"] = pattern
+            with self.assertRaisesRegex(ValueError, "exactly one"):
+                runner.partition_reports(config, trace, [])
+        with self.assertRaisesRegex(ValueError, "exactly one"):
+            runner.partition_reports(self.grouped_config(), trace, ["unclassified.cpp"])
+
+    def test_invalid_duplicate_or_escaping_report_paths_are_rejected(self):
+        for name in ("../outside", "/absolute", "tools", "", ".", 7):
+            config = self.grouped_config()
+            config["reports"][0]["id"] = name
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "report id"):
+                runner.partition_reports(config, {"files": []}, [])
+
+    def test_bad_group_pattern_publishes_a_failed_run(self):
+        config = self.grouped_config()
+        config["reports"][0]["filter"] = "["
+        rc, data, _ = self.simulated_run(config_text=json.dumps(config))
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(data["status"], "failed")
+        self.assertIn("error", data)
+
+    def test_reports_render_concurrently_after_a_single_test_and_collection_run(self):
+        rc, data, calls = self.simulated_run(config_text=json.dumps(self.grouped_config()),
+            measured_sources=["src/one.c", "tools/one.c"], jobs=2, report_barrier=threading.Barrier(2))
+        self.assertEqual(rc, 0)
+        self.assertEqual(calls, 4)  # One CTest, one gcov scan, two independent renderers.
+        self.assertEqual(data["report_concurrency"], 2)
+        self.assertEqual(data["tests"]["total"], 1)
+        self.assertEqual(data["reports"]["runtime"]["coverage"]["line_total"], 1)
+        self.assertEqual(data["reports"]["tools"]["coverage"]["line_total"], 1)
+        self.assertEqual(data["coverage"]["line_total"], 2)
+
+    def test_report_failure_does_not_prevent_other_report_and_still_fails_run(self):
+        rc, data, calls = self.simulated_run(config_text=json.dumps(self.grouped_config()),
+            measured_sources=["src/one.c", "tools/one.c"], jobs=2, render_failure="tools")
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(calls, 4)
+        self.assertEqual(data["status"], "failed")
+        self.assertEqual(data["reports"]["runtime"]["status"], "passed")
+        self.assertEqual(data["reports"]["tools"]["status"], "failed")
+        self.assertIn("gcovr failed", data["reports"]["tools"]["error"])
+
+    def test_failed_suite_keeps_both_reports_and_one_worker_is_supported(self):
+        rc, data, calls = self.simulated_run(config_text=json.dumps(self.grouped_config()),
+            measured_sources=["src/one.c", "tools/one.c"], jobs=1,
+            junit="<testsuite><testcase><failure/></testcase></testsuite>")
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(calls, 4)
+        self.assertEqual(data["report_concurrency"], 1)
+        for report in data["reports"].values():
+            self.assertEqual(report["status"], "failed")
+            self.assertIn("coverage", report)
+
+    def test_empty_group_is_not_reported_as_full_coverage(self):
+        rc, data, _ = self.simulated_run(config_text=json.dumps(self.grouped_config()))
+        self.assertNotEqual(rc, 0)
+        self.assertIn("No production-code coverage", data["reports"]["tools"]["error"])
+
+    def test_group_index_escapes_titles_and_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner.report_index(root, {"project": "<project>",
+                "tests": {"passed": 1, "total": 1, "failed": 0, "skipped": 0},
+                "reports": {"tools": {"title": "<tools>", "status": "failed", "error": "<bad>"}}})
+            page = (root / "index.html").read_text()
+            self.assertIn("&lt;project&gt;", page)
+            self.assertIn("&lt;tools&gt;", page)
+            self.assertIn("&lt;bad&gt;", page)
+            self.assertIn('href="tools/run.json"', page)
+            self.assertIn("1/1 passed", page)
 
     def test_tool_version_mismatches_fail_before_running_tests(self):
         for options, message in (
@@ -242,7 +340,7 @@ class CoverageRunnerTests(unittest.TestCase):
                 configure = ["cmake", "-S", str(source), "-B", str(build),
                              "-DTEAL_COVERAGE_GCOVR=/no/such/gcovr", "-DTEAL_COVERAGE_JOBS=2",
                              "-DTEAL_TEST_HELPER=" + str(ROOT / "cmake/TealCoverage.cmake")]
-                if cross or not CMAKE_HAS_JUNIT:
+                if cross:
                     configure += ["-DCMAKE_SYSTEM_NAME=Linux"]
                 result = subprocess.run(configure, text=True, capture_output=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -250,7 +348,7 @@ class CoverageRunnerTests(unittest.TestCase):
                 result = subprocess.run(["cmake", "--build", str(build), "--target", "coverage"],
                                         text=True, capture_output=True, timeout=60)
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-                if cross:
+                if cross or not CMAKE_HAS_JUNIT:
                     self.assertIn("Coverage requires a native build", result.stdout)
                     self.assertFalse((build / "coverage").exists())
                 else:
@@ -325,6 +423,58 @@ class CoverageRunnerTests(unittest.TestCase):
                 self.assertNotEqual(report.resolve(), first)
                 self.assertTrue(first.is_dir())
                 self.assertTrue((report / "coverage.xml").is_file())
+
+    @unittest.skipUnless(GCOVR and CMAKE_HAS_JUNIT,
+                         "Compiler integration requires gcovr and CMake 3.21+ (CTest JUnit)")
+    def test_native_grouped_reports_keep_disjoint_totals_and_test_failures(self):
+        with tempfile.TemporaryDirectory(prefix="grouped coverage ") as directory:
+            root = Path(directory)
+            source, build = root / "source", root / "build"
+            shutil.copytree(ROOT / "tests/fixtures/coverage", source)
+            config_path = source / "tests/coverage.json"
+            config = json.loads(config_path.read_text())
+            config["reports"] = [
+                {"id": "runtime", "title": "Runtime", "filter": r"^libcalc\.c$"},
+                {"id": "tools", "title": "Tools", "filter": r"^libunused\.c$"}]
+            config_path.write_text(json.dumps(config))
+            env = dict(os.environ)
+            for key in ("GCOV_PREFIX", "GCOV_PREFIX_STRIP"):
+                env.pop(key, None)
+
+            def call(argv, fail=False):
+                result = subprocess.run(argv, env=env, text=True, capture_output=True, timeout=60)
+                if fail:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            configure = ["cmake", "-S", str(source), "-B", str(build),
+                         "-DTEAL_ENABLE_COVERAGE=ON", "-DTEAL_COVERAGE_JOBS=2",
+                         "-DTEAL_COVERAGE_GCOVR=" + str(GCOVR),
+                         "-DTEAL_TEST_HELPER=" + str(ROOT / "cmake/TealCoverage.cmake")]
+            for fail in (False, True):
+                call(configure + ["-DFIXTURE_FAIL=" + ("ON" if fail else "OFF")])
+                call(["cmake", "--build", str(build), "--target", "coverage", "-j2"], fail)
+                report = build / "coverage-report"
+                data = json.loads((report / "run.json").read_text())
+                self.assertEqual(data["status"], "failed" if fail else "passed")
+                self.assertEqual(data["tests"]["total"], 1)
+                self.assertEqual(data["tests"]["failed"], int(fail))
+                self.assertEqual(data["report_concurrency"], 2)
+                for name, filename in (("runtime", "libcalc.c"), ("tools", "libunused.c")):
+                    group = report / name
+                    files = json.loads((group / "coverage.json").read_text())["files"]
+                    self.assertEqual([f["file"] for f in files], [filename])
+                    self.assertEqual(data["reports"][name]["status"], data["status"])
+                    for output in ("index.html", "coverage.xml", "coverage.json", "summary.json",
+                                   "summary.txt", "run.json", "gcovr.log"):
+                        self.assertTrue((group / output).is_file(), output)
+                    self.assertIn(name + "/index.html", (report / "index.html").read_text())
+                for metric in ("line_total", "line_covered", "function_total", "branch_total"):
+                    self.assertEqual(data["coverage"][metric], sum(
+                        group["coverage"][metric] for group in data["reports"].values()))
+                self.assertTrue((report / "junit.xml").is_file())
+                self.assertEqual(list((build / "CMakeFiles").rglob("*.gcda")), [])
 
     @unittest.skipUnless(GCOVR and CMAKE_HAS_JUNIT,
                          "Compiler integration requires gcovr and CMake 3.21+ (CTest JUnit)")

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Run native CTest suites with isolated GCC counters and gcovr reports."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import fcntl
 import hashlib
+import html
 import json
 import os
 from pathlib import Path
@@ -99,6 +101,127 @@ def logged(argv, path, cwd, env):
         return subprocess.run(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
 
 
+def report_options(directory, detailed=True):
+    options = ["--json", str(directory / "coverage.json"),
+               "--json-summary", str(directory / "summary.json")]
+    if detailed:
+        options += ["--html-details", str(directory / "index.html"),
+                    "--cobertura", str(directory / "coverage.xml"),
+                    "--txt", str(directory / "summary.txt"), "--print-summary"]
+    return options
+
+
+def partition_reports(config, coverage, sources):
+    """Require one owner for every measured/unbuilt source, with no double counting."""
+    reports = config["reports"]
+    if not reports or not isinstance(reports, list):
+        raise ValueError("reports must be a nonempty list")
+    patterns, groups = [], {}
+    for report in reports:
+        name = report["id"]
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", name) or name in groups:
+            raise ValueError("Invalid or duplicate coverage report id: " + str(name))
+        patterns.append((name, re.compile(report["filter"])))
+        groups[name] = {"spec": report, "trace": {**coverage, "files": []},
+                        "unmeasured_sources": []}
+    measured = {entry["file"]: entry for entry in coverage["files"]}
+    for path in sorted(set(measured) | set(sources)):
+        owners = [name for name, pattern in patterns if pattern.search(path)]
+        if len(owners) != 1:
+            raise ValueError("Expected exactly one coverage report for " + path +
+                             "; matched: " + (", ".join(owners) or "none"))
+        group = groups[owners[0]]
+        if path in measured:
+            group["trace"]["files"].append(measured[path])
+        else:
+            group["unmeasured_sources"].append(path)
+    return groups
+
+
+def render_reports(args, config, coverage, sources, run, result, env, tests_ok):
+    """Collect gcov once, then render disjoint JSON traces concurrently.
+
+    Running two gcov scans over the same objects can race on generated files.
+    Each renderer instead reads its own trace and writes its own directory.
+    """
+    groups = partition_reports(config, coverage, sources)
+    workers = min(args.jobs, len(groups))
+    jobs_per_report = max(1, args.jobs // workers)
+    result["report_concurrency"] = workers
+    print("Rendering " + ", ".join(groups) + " coverage reports with " +
+          str(workers) + " concurrent workers", flush=True)
+
+    def render(item):
+        name, group = item
+        directory = run / name
+        directory.mkdir()
+        spec = group["spec"]
+        data = {**result, "report": str(directory), "report_id": name,
+                "title": spec.get("title", name), "status": "failed",
+                "scope": {**config, "filter": spec["filter"]},
+                "unmeasured_sources": group["unmeasured_sources"]}
+        data.pop("coverage", None)
+        data["scope"].pop("reports", None)
+        try:
+            if not group["trace"]["files"]:
+                raise RuntimeError("No production-code coverage was measured in report " + name)
+            trace = directory / "input.json"
+            write_json(trace, group["trace"])
+            data["gcovr_exit"] = logged(
+                [args.gcovr, "--root", str(args.source.resolve()),
+                 "--add-tracefile", str(trace), "--no-markers",
+                 "--html-title", config["project"] + " - " + data["title"],
+                 "-j", str(jobs_per_report)] + report_options(directory),
+                directory / "gcovr.log", args.source.resolve(), env)
+            if data["gcovr_exit"]:
+                raise RuntimeError("gcovr failed; see " + str(directory / "gcovr.log"))
+            summary = json.loads((directory / "summary.json").read_text())
+            if not summary["line_total"]:
+                raise RuntimeError("Empty coverage report: " + name)
+            data["coverage"] = {k: v for k, v in summary.items() if k != "files"}
+            data["status"] = "passed" if tests_ok else "failed"
+        except (OSError, RuntimeError, ValueError, KeyError, subprocess.SubprocessError) as error:
+            data["error"] = str(error)
+        write_json(directory / "run.json", data)
+        return name, data
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        return dict(executor.map(render, groups.items()))
+
+
+def report_index(run, result):
+    """A small landing page; each report keeps its own coverage denominator."""
+    escape = html.escape
+    rows = []
+    for name, report in result["reports"].items():
+        coverage = report.get("coverage", {})
+        measured = "coverage" in report
+        link = name + ("/index.html" if measured else "/run.json")
+        cells = "".join("<td>" + escape(str(coverage.get(metric + "_percent", "unavailable"))) +
+                        ("%" if measured else "") + "</td>"
+                        for metric in ("line", "function", "branch"))
+        rows.append('<tr><td><a href="' + escape(link, quote=True) + '">' +
+                    escape(report["title"]) + "</a></td>" + cells + "<td>" +
+                    escape(report["status"]) + "</td><td>" +
+                    escape(report.get("error", "")) + "</td></tr>")
+    tests = result["tests"]
+    (run / "index.html").write_text(
+        '<!doctype html><html lang="en"><meta charset="utf-8"><title>' +
+        escape(result["project"]) + ' coverage</title><style>'
+        'body{font:16px sans-serif;max-width:1100px;margin:3em auto;padding:0 1em}'
+        'table{border-collapse:collapse;width:100%}th,td{padding:.8em;text-align:left;'
+        'border-bottom:1px solid #ccc}a{color:#1764a0}</style><h1>' +
+        escape(result["project"]) + ' coverage</h1><p>One shared test run: ' +
+        str(tests["passed"]) + '/' + str(tests["total"]) + ' passed; ' +
+        str(tests["failed"]) + ' failed; ' + str(tests["skipped"]) + ' skipped.</p>'
+        '<p>Each source belongs to exactly one report. Shared code is counted once. '
+        'The reports use the same test run; their test counts must not be added together.</p>'
+        '<table><tr><th>Report</th><th>Lines</th><th>Functions</th><th>Branches</th>'
+        '<th>Status</th><th>Diagnostic</th></tr>' + "".join(rows) + '</table>'
+        '<p><a href="junit.xml">Test results</a> | <a href="ctest.log">Test log</a> | '
+        '<a href="run.json">Run metadata</a></p></html>\n')
+
+
 def run_coverage(args):
     source, build = args.source.resolve(), args.build.resolve()
     runs = build / "coverage-runs"
@@ -155,12 +278,8 @@ def run_coverage(args):
         report_rc = logged(
             [args.gcovr, "--root", str(source), "--filter", config["filter"],
              "--gcov-executable", args.gcov, "--no-markers",
-             "--html-details", str(run / "index.html"),
-             "--cobertura", str(run / "coverage.xml"),
-             "--json", str(run / "coverage.json"),
-             "--json-summary", str(run / "summary.json"),
-             "--txt", str(run / "summary.txt"), "--print-summary",
-             "-j", str(args.jobs), str(objects)],
+             "-j", str(args.jobs), str(objects)] +
+            report_options(run, detailed="reports" not in config),
             run / "gcovr.log", source, env)
         result["gcovr_exit"] = report_rc
         if report_rc:
@@ -171,13 +290,23 @@ def run_coverage(args):
             raise RuntimeError("No production-code coverage was measured; refusing an empty report")
         measured = {f["file"] for f in coverage["files"]}
         result["coverage"] = {k: v for k, v in summary.items() if k != "files"}
-        result["unmeasured_sources"] = sorted(set(inventory(source, config["filter"])) - measured)
+        sources = inventory(source, config["filter"])
+        result["unmeasured_sources"] = sorted(set(sources) - measured)
         result["counter_files"] = sum(1 for _ in objects.rglob("*.gcda"))
         if not result["counter_files"]:
             raise RuntimeError("Tests produced no counters; coverage result is incomplete")
-        exit_code = 0 if test_rc == 0 and result["tests"]["total"] > 0 and not result["tests"]["failed"] else 1
+        tests_ok = test_rc == 0 and result["tests"]["total"] > 0 and not result["tests"]["failed"]
+        reports_ok = True
+        if "reports" in config:
+            result["reports"] = render_reports(args, config, coverage, sources, run, result, env, tests_ok)
+            report_index(run, result)
+            reports_ok = all(report["status"] == "passed" for report in result["reports"].values())
+            for name, report in result["reports"].items():
+                if "error" in report:
+                    print("coverage: " + name + ": " + report["error"], file=sys.stderr)
+        exit_code = 0 if tests_ok and reports_ok else 1
         result["status"] = "passed" if exit_code == 0 else "failed"
-    except (OSError, RuntimeError, ValueError, KeyError, IndexError, ET.ParseError, subprocess.SubprocessError) as error:
+    except (OSError, RuntimeError, ValueError, KeyError, IndexError, re.error, ET.ParseError, subprocess.SubprocessError) as error:
         result["error"] = str(error)
         print("coverage: " + str(error), file=sys.stderr)
     finally:
@@ -187,10 +316,11 @@ def run_coverage(args):
         publish_report(build, run)
     print("Coverage report: " + str(build / "coverage-report"), flush=True)
     if "coverage" in result:
-        c = result["coverage"]
-        print("{project}: lines {line_percent}% ({line_covered}/{line_total}), "
-              "functions {function_percent}%, branches {branch_percent}%".format(
-                  project=config["project"], **c), flush=True)
+        for report in result.get("reports", {"all": result}).values():
+            if "coverage" in report:
+                print("{project}: lines {line_percent}% ({line_covered}/{line_total}), "
+                      "functions {function_percent}%, branches {branch_percent}%".format(
+                          project=report.get("title", config["project"]), **report["coverage"]), flush=True)
     return exit_code
 
 
