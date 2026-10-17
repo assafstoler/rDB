@@ -50,6 +50,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
 
     add_executable(rdb_stats_concurrency_tests rdb_stats_concurrency_tests.c)
     target_link_libraries(rdb_stats_concurrency_tests pthread)
+
+    add_executable(rdb_error_tests rdb_error_tests.c
+        "${CMAKE_SOURCE_DIR}/src/rdb.c")
+    set_property(TARGET rdb_error_tests PROPERTY LINK_LIBRARIES pthread)
+    set_property(TARGET rdb_error_tests APPEND_STRING PROPERTY LINK_FLAGS
+        " -Wl,--wrap=realloc")
 endif()
 
 #install(TARGETS rdb_test DESTINATION test)
@@ -78,6 +84,9 @@ if(TARGET rdb_lock_debug_tests)
 endif()
 if(TARGET rdb_stats_concurrency_tests)
     add_test (NAME rdb_stats_concurrency_tests COMMAND rdb_stats_concurrency_tests)
+endif()
+if(TARGET rdb_error_tests)
+    add_test (NAME rdb_error_tests COMMAND rdb_error_tests)
 endif()
 
 add_test (rdb_test_init_clean rdb_test -t1)

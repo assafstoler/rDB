@@ -199,49 +199,32 @@ static int fault_pool(rdb_pool_t *pool, int index, void *record,
 // library user can later print that string to errno/errstr or similar.
 int rdb_error_value (int rv, char *err)
 {
-    rdb_sem_lock(&rdb_error_mutex);
-#ifdef KM
-
-    if (rdb_error_string != NULL) {
-        kfree (rdb_error_string);
-        rdb_error_string = NULL;
-    }
-
-    rdb_error_string = kmalloc (strlen (err) + 1, GFP_KERNEL);
-#else
-    rdb_error_string = realloc (rdb_error_string, strlen (err) + 1);
-#endif
-
-    if (rdb_error_string == NULL)
-        rdb_info ("rdb: failed to Alloc RAM for error message, original error was"
-                " \"%s\"\n", err);
-    else
-        strcpy (rdb_error_string, err);
-
-    rdb_sem_unlock(&rdb_error_mutex);
-
+    rdb_error(err);
     return rv;
 }
 
 // Same as above, without returning a value
 void rdb_error (char *err)
 {
+    char *message;
+
     rdb_sem_lock(&rdb_error_mutex);
 #ifdef KM
-
-    if (rdb_error_string != NULL)
-        kfree (rdb_error_string);
-
-    rdb_error_string = kmalloc (strlen (err) + 1, GFP_KERNEL);
+    message = kmalloc (strlen (err) + 1, GFP_KERNEL);
 #else
-    rdb_error_string = realloc (rdb_error_string, strlen (err) + 1);
+    message = realloc (rdb_error_string, strlen (err) + 1);
 #endif
 
-    if (rdb_error_string == NULL)
+    if (message == NULL)
         rdb_info ("rdb: failed to Alloc RAM for error message, original error was"
                 " \"%s\"\n", err);
-    else
-        strcpy (rdb_error_string, err);
+    else {
+        strcpy (message, err);
+#ifdef KM
+        kfree (rdb_error_string);
+#endif
+        rdb_error_string = message;
+    }
 
     rdb_sem_unlock(&rdb_error_mutex);
 }

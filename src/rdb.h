@@ -291,6 +291,8 @@ int         rdb_init_ex(uint32_t flags);
 // Return -1 for NULL, 0 for a healthy pool, or 1 for a faulted pool.
 // If out is non-NULL, copy the saved fault information into it.
 int         rdb_pool_get_fault(const rdb_pool_t *pool, rdb_fault_info_t *out);
+// On allocation failure, print err and retain the previous message (or NULL
+// if none was saved). rdb_error_value always returns rv.
 int         rdb_error_value (int rv, char *err);
 void        rdb_error (char *err);
 // Registry traversal is synchronized; the returned handle is borrowed and
