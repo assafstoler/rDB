@@ -324,13 +324,28 @@ rdb_pool_t *rdb_find_pool_by_name (char *poolName)
     return (NULL);
 }
 // Print pool usage report
+// Called only with a valid buffer and positive size. Preserve the prefix and
+// replace the last three characters with dots, or fewer if the buffer is tiny.
+static char *pool_stats_truncated(char *buf, int max_len)
+{
+    int end = max_len - 1;
+    int dots = end < 3 ? end : 3;
+    memset(buf + end - dots, '.', dots);
+    buf[end] = '\0';
+    return buf;
+}
+
 char * rdb_print_pool_stats (char *buf, int max_len)
 {
+    if (!buf || max_len <= 0) {
+        return buf;
+    }
+
     int used=0;
+    int rc;
     
 #ifdef RDB_POOL_COUNTERS
     rdb_pool_t *pool;
-    int rc;
 
     if (pool_root != NULL) {
         pool = pool_root;
@@ -339,6 +354,10 @@ char * rdb_print_pool_stats (char *buf, int max_len)
             rc = snprintf(buf + used, max_len - used, "Pool: %s : %d\n",
                     pool->name, pool->record_count );
             if ( rc > 0 ) {
+                // snprintf returns the required length, not the bytes that fit.
+                if (rc >= max_len - used) {
+                    return pool_stats_truncated(buf, max_len);
+                }
                 used += rc;
             } 
             else {
@@ -349,10 +368,14 @@ char * rdb_print_pool_stats (char *buf, int max_len)
             pool = pool->next;
         }
     }
-    snprintf(buf + used, max_len - used, ":END:");
+    rc = snprintf(buf + used, max_len - used, ":END:");
 #else
-    snprintf(buf + used, max_len - used, "rDB pool record counting disabled");
+    rc = snprintf(buf + used, max_len - used,
+            "rDB pool record counting disabled");
 #endif
+    if (rc >= max_len - used) {
+        return pool_stats_truncated(buf, max_len);
+    }
     return (buf);
 }
 

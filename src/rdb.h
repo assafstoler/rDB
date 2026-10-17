@@ -366,6 +366,9 @@ int         rdb_move2 (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void
 // users/waiters and release both locks before dropping a pool.
 void        rdb_drop_pool (rdb_pool_t *pool);
 void        rdb_print_pools(void *fp);
+// Return buf; max_len includes the terminating NUL. Truncated reports end with
+// "..." (fewer dots if the buffer cannot hold three dots and a NUL).
+// A NULL buffer or nonpositive max_len causes no writes.
 char       *rdb_print_pool_stats (char *buf, int max_len);
 
 //void        _rdb_dump (rdb_pool_t *, int index, void *start);
