@@ -2736,31 +2736,27 @@ fault:
     }
 }
 
-static int reindex_string_seen_before(rdb_pool_t *pool, void *record,
-        int current_index, size_t current_part, char *value)
+static void reindex_clear_string_aliases(rdb_pool_t *pool, void *record,
+        char *value)
 {
     int index;
-    size_t part;
-    for (index = 0; index <= current_index; ++index) {
+    for (index = 0; index < pool->indexCount; ++index) {
         uint32_t kind = pool->FLAGS[index] & RDB_KEYS;
         if (kind == RDB_KPSTR) {
-            char *prior = *(char **)((unsigned char *)record +
+            char **field = (char **)((unsigned char *)record +
                     pool->key_offset[index]);
-            if (index < current_index && prior == value) return 1;
+            if (*field == value) *field = NULL;
         } else if (kind == RDB_KCF) {
             rdb_kcf_index_t *metadata = kcf_index_meta(pool, index);
-            if (!metadata) continue;
-            for (part = 0; part < metadata->part_count; ++part) {
-                char *prior;
-                if (index == current_index && part >= current_part) break;
+            if (metadata) for (size_t part = 0; part < metadata->part_count; ++part) {
+                char **field;
                 if (metadata->parts[part].type != RDB_KPSTR) continue;
-                prior = *(char **)((unsigned char *)record +
+                field = (char **)((unsigned char *)record +
                         pool->key_offset[index] + metadata->parts[part].offset);
-                if (prior == value) return 1;
+                if (*field == value) *field = NULL;
             }
         }
     }
-    return 0;
 }
 
 static void reindex_free_record_strings(rdb_pool_t *pool, void *record)
@@ -2773,8 +2769,9 @@ static void reindex_free_record_strings(rdb_pool_t *pool, void *record)
             char **field = (char **)((unsigned char *)record +
                     pool->key_offset[index]);
             if (*field) {
-                if (!reindex_string_seen_before(pool, record, index, 0, *field))
-                    rdb_free(*field);
+                char *value = *field;
+                reindex_clear_string_aliases(pool, record, value);
+                rdb_free(value);
             }
         } else if (kind == RDB_KCF) {
             rdb_kcf_index_t *metadata = kcf_index_meta(pool, index);
@@ -2783,28 +2780,12 @@ static void reindex_free_record_strings(rdb_pool_t *pool, void *record)
                     char **field = (char **)((unsigned char *)record +
                             pool->key_offset[index] + metadata->parts[part].offset);
                     if (*field) {
-                        if (!reindex_string_seen_before(pool, record, index,
-                                    part, *field))
-                            rdb_free(*field);
+                        char *value = *field;
+                        reindex_clear_string_aliases(pool, record, value);
+                        rdb_free(value);
                     }
                 }
             }
-        }
-    }
-    for (index = 0; index < pool->indexCount; ++index) {
-        uint32_t kind = pool->FLAGS[index] & RDB_KEYS;
-        if (kind == RDB_KPSTR) {
-            char **field = (char **)((unsigned char *)record +
-                    pool->key_offset[index]);
-            *field = NULL;
-        } else if (kind == RDB_KCF) {
-            rdb_kcf_index_t *metadata = kcf_index_meta(pool, index);
-            if (metadata) for (part = 0; part < metadata->part_count; ++part)
-                if (metadata->parts[part].type == RDB_KPSTR) {
-                    char **field = (char **)((unsigned char *)record +
-                            pool->key_offset[index] + metadata->parts[part].offset);
-                    *field = NULL;
-                }
         }
     }
 }
