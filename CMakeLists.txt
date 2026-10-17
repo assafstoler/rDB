@@ -1,6 +1,11 @@
 cmake_minimum_required (VERSION 2.8)
 project (rDB)
 
+# Keep production-like optimization even when debugging frame-rate workloads.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+endif()
+
 SET(rdb_SRCS
    src/rdb.c
 )
@@ -42,11 +47,11 @@ endmacro(use_c14)
 use_c14()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -fms-extensions")
-set(CMAKE_C_FLAGS_DEBUG "-Wall -O0 -g")
-set(CMAKE_C_FLAGS_RELEASE "-Wall -O3")
+set(CMAKE_C_FLAGS_DEBUG "-Wall -O2 -g")
+set(CMAKE_C_FLAGS_RELEASE "-Wall -O2")
 set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -fPIC -fms-extensions")
-set(CMAKE_CXX_FLAGS_DEBUG "-Wall -O0 -g")
-set(CMAKE_CXX_FLAGS_RELEASE "-Wall -O3")
+set(CMAKE_CXX_FLAGS_DEBUG "-Wall -O2 -g")
+set(CMAKE_CXX_FLAGS_RELEASE "-Wall -O2")
 
 if(NOT DEFINED "SKIP_KERNEL")
     set(SKIP_KERNEL "false")
