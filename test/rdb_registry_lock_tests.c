@@ -16,6 +16,7 @@ static int failures;
 typedef struct {
     int id;
     int failures;
+    rdb_pool_t *keeper;
 } worker_data_t;
 
 typedef struct {
@@ -38,6 +39,8 @@ static void *register_and_drop_pools(void *arg)
             ++data->failures;
             continue;
         }
+        if (rdb_find_pool_by_name("registry-keeper") != data->keeper)
+            ++data->failures;
         rdb_drop_pool(pool);
     }
     return NULL;
@@ -46,7 +49,7 @@ static void *register_and_drop_pools(void *arg)
 int main(void)
 {
     int key_offset = (int)(offsetof(record_t, key) - sizeof(rdb_bpp_t));
-    worker_data_t workers[] = {{0, 0}, {1, 0}};
+    worker_data_t workers[2];
     pthread_t threads[2];
     int started = 0;
     rdb_pool_t *keeper;
@@ -59,6 +62,8 @@ int main(void)
         rdb_clean(0);
         return 1;
     }
+    workers[0] = (worker_data_t){0, 0, keeper};
+    workers[1] = (worker_data_t){1, 0, keeper};
 
     for (int i = 0; i < 2; ++i) {
         int rc = pthread_create(&threads[i], NULL,

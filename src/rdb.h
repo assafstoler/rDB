@@ -292,6 +292,8 @@ int         rdb_init_ex(uint32_t flags);
 int         rdb_pool_get_fault(const rdb_pool_t *pool, rdb_fault_info_t *out);
 int         rdb_error_value (int rv, char *err);
 void        rdb_error (char *err);
+// Registry traversal is synchronized; the returned handle is borrowed and
+// must remain alive while the caller uses it.
 rdb_pool_t *rdb_find_pool_by_name (char *poolName);
 // Both pool creation APIs accept 1..RDB_POOL_MAX_IDX indexes. In user space,
 // mutex initialization failure returns NULL, reports the lock and error code,

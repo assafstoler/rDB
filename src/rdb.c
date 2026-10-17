@@ -302,11 +302,8 @@ static int set_key_size(rdb_pool_t *pool, int index, size_t key_size)
     return 0;
 }
 
-// If you lost your pool handle, or more likely, you are working in a multi-
-// threaded application, and you need to attach to a data pool you did not
-// create, you can use this function to retrieve the matching rDB handle.
-// * Remember to use locks on shared data pools.
-rdb_pool_t *rdb_find_pool_by_name (char *poolName)
+// Caller holds reg_mutex; registration uses this helper without relocking.
+static rdb_pool_t *find_pool_by_name_unlocked(char *poolName)
 {
     rdb_pool_t *pool;
 
@@ -323,6 +320,18 @@ rdb_pool_t *rdb_find_pool_by_name (char *poolName)
 
     return (NULL);
 }
+
+// Protect traversal from concurrent registration/drop of unrelated pools.
+// The returned handle is borrowed; the caller must keep it alive while in use.
+rdb_pool_t *rdb_find_pool_by_name (char *poolName)
+{
+    rdb_pool_t *pool;
+    rdb_sem_lock(&reg_mutex);
+    pool = find_pool_by_name_unlocked(poolName);
+    rdb_sem_unlock(&reg_mutex);
+    return pool;
+}
+
 // Print pool usage report
 // Called only with a valid buffer and positive size. Preserve the prefix and
 // replace the last three characters with dots, or fewer if the buffer is tiny.
@@ -694,7 +703,7 @@ rdb_pool_t *rdb_register_um_pool (
     //TODO:kernel frindly locks
     rdb_sem_lock(&reg_mutex);
 
-    if (rdb_find_pool_by_name (poolName) != NULL) {
+    if (find_pool_by_name_unlocked(poolName) != NULL) {
         rdb_error ("rDB: Fatal: Duplicte pool name in rdb_register_pool");
         pool = NULL;
     } else {
