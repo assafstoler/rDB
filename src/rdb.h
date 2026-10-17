@@ -205,6 +205,7 @@ typedef struct balanced_pointer_pack_s {
 } rdb_bpp_t;
 
 // A pool retains the first detected consistency failure until it is dropped.
+// Record operations then stop; rdb_drop_pool still releases the pool metadata.
 #define RDB_ERR_FAULTED (-5)
 typedef struct {
     int code;

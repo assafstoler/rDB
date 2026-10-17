@@ -126,6 +126,25 @@ int rdb_pool_get_fault(const rdb_pool_t *pool, rdb_fault_info_t *out)
     return pool->fault.code ? 1 : 0;
 }
 
+// Keep the first consistency failure in the pool even if saving the message
+// fails. A fault is sticky until the pool is dropped.
+static int fault_pool(rdb_pool_t *pool, int index, void *record,
+        const char *operation, const char *reason)
+{
+    if (!pool->fault.code) {
+        char message[320];
+        pool->fault.code = RDB_ERR_FAULTED;
+        pool->fault.index = index;
+        pool->fault.record = record;
+        pool->fault.operation = operation;
+        pool->fault.reason = reason;
+        snprintf(message, sizeof(message), "Pool '%s' index %d: %s failed: %s; pool faulted",
+                pool->name, index, operation, reason);
+        rdb_error(message);
+    }
+    return RDB_ERR_FAULTED;
+}
+
 // Store internal error string to allow user to retrieve it, and return with
 // user set value. typical use will look like
 // Example: return rdv_error_value(-1, "failed to dance this dance");
@@ -578,6 +597,7 @@ void rdb_print_pools(void *out) {
 // Register additional Indexes to an existing data pool
 int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
         int FLAGS, void *compare_fn) {
+    if (pool && pool->fault.code) return RDB_ERR_FAULTED;
     rdb_sem_lock(&reg_mutex);
     if (idx == 0) {
         rdb_sem_unlock(&reg_mutex);
@@ -996,7 +1016,7 @@ void rdb_dump (rdb_pool_t *pool, int index, char *separator) {
         return;
     }
 
-    if (pool->root[index] == NULL) return;
+    if (pool->fault.code || pool->root[index] == NULL) return;
 
     if ((pool->FLAGS[index] & (RDB_KEYS | RDB_NOKEYS)) != 0)
         _rdb_dump (pool, index, separator, NULL);
@@ -1323,6 +1343,12 @@ int _rdb_delete (
         PP_T        *parent,
         int         side);
 
+// Internal deletion distinguishes a miss from successful unlinking and AVL
+// height changes. Public delete_one keeps its historical 0/1 result.
+enum { DELETE_MISSING = 0, DELETE_REMOVED = 1, DELETE_SHRANK = 2 };
+static int unlink_record(rdb_pool_t *pool, void *record, PP_T *queue_links,
+        const char *operation);
+
 // Return shoud be the # of updated indexes, which must match the number of 
 // defined indexes, anything less shows an error and should be treated as 
 // such by user.
@@ -1331,48 +1357,42 @@ int _rdb_delete (
 
 int rdb_insert (rdb_pool_t *pool, void *data)
 {
-    int     indexCount, ic2, last_success = -1;
-    int     rc = 0;
-  
-    if (data != NULL) {
-        for (indexCount = 0; indexCount < pool->indexCount; indexCount++) {
-            (_rdb_insert (pool, data, pool->root[indexCount], 
-                indexCount, NULL, 0) < 0) ? rc : rc++;
+    int indexCount;
 
-            if ( rc <= indexCount ) {
-                //TODO: NOW!: finish partial delete
-                if (last_success >= 0) { // we failed to insert, we have what to undo
-                    //printf("RECOVERY\n");
-                    rc = 0;
-                    for (ic2 = 0; ic2 <= last_success; ic2++ ) {
-                        //printf("RECOVERY %d\n", ic2);
-                        (_rdb_delete (pool, ic2, data, NULL, NULL, 0) < 0) ? rc : rc++;
-                    }
-                    if (rc != ic2 + 1) {
-                        //not able to delete what we just inserted? Lock missed?
-                        rdb_error_value(-1, "rdb_insert failed. Insert UNDO failed. LOCK ERROR?");
-                    } 
-                    rc = 0; // to ensure counter will not go up
-                }
-                break;
-            }
-            else {
-                last_success = indexCount;
-            }
+    if (!pool || !data) return -1;
+    if (pool->fault.code) return RDB_ERR_FAULTED;
+    if (!pool->indexCount || pool->indexCount > RDB_POOL_MAX_IDX) {
+        char message[160];
+        snprintf(message, sizeof(message),
+                "Pool '%s': insert rejected: invalid index count %u (expected 1..%d)",
+                pool->name, (unsigned)pool->indexCount, RDB_POOL_MAX_IDX);
+        return rdb_error_value(-1, message);
+    }
+
+    for (indexCount = 0; indexCount < pool->indexCount; ++indexCount) {
+        int undo;
+        if (_rdb_insert(pool, data, pool->root[indexCount], indexCount,
+                    NULL, 0) >= 0)
+            continue;
+
+        for (undo = 0; undo < indexCount; ++undo) {
+            if (_rdb_delete(pool, undo, data, NULL, NULL, 0) <= DELETE_MISSING)
+                return fault_pool(pool, undo, data, "insert rollback",
+                        "could not unlink a partially inserted record");
         }
+        return 0;
+    }
 #ifdef RDB_POOL_COUNTERS
-        if (rc > 0) pool->record_count++;
+    pool->record_count++;
 #endif
-    } else
-        rc = -1;
-
-    return rc;
+    return pool->indexCount;
 }
 
 // Only insert one index (asuming this index was removed and updated prior).
 int rdb_insert_one (rdb_pool_t *pool, int index, void *data)
 {
     if (!valid_pool_index(pool, index)) return -1;
+    if (pool->fault.code) return RDB_ERR_FAULTED;
     return _rdb_insert (pool, data, pool->root[index], index, NULL, 0) ;
 }
 
@@ -1491,14 +1511,14 @@ void   *_rdb_get_const (
 // As a special case, if data = null, root node will be returned.
 void   *rdb_get (rdb_pool_t *pool, int idx, const void *data)
 {
-    if (!valid_pool_index(pool, idx)) return NULL;
+    if (!valid_pool_index(pool, idx) || pool->fault.code) return NULL;
     debug("Get:pool=%s,idx=%d", pool->name, idx);
     return _rdb_get (pool, idx, data, NULL, 0);
 }
 
 void   *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value)
 {
-    if (!valid_pool_index(pool, idx)) return NULL;
+    if (!valid_pool_index(pool, idx) || pool->fault.code) return NULL;
     debug("Get:pool=%s,idx=%d", pool->name, idx);
     return _rdb_get/*_const*/ (pool, idx, &value, NULL, 0);
 }
@@ -1579,7 +1599,7 @@ void   *_rdb_get_neigh (
 void   *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after)
 {
     *before = *after = NULL;
-    if (!valid_pool_index(pool, idx)) return NULL;
+    if (!valid_pool_index(pool, idx) || pool->fault.code) return NULL;
     return _rdb_get_neigh (pool, idx, data, NULL, 0, before, after);
 }
 
@@ -1659,8 +1679,10 @@ int _rdb_iterate (
         if (*resumePtr == NULL) {
             rc = 0;
 
-            if (fn == NULL || RDB_CB_DELETE_NODE == (rc2 = fn (dataHead, data))
-                    || RDB_CB_DELETE_NODE_AND_ABORT == rc2 || 
+            if (fn) rc2 = fn(dataHead, data);
+            if (pool->fault.code) return RDBFE_ABORT;
+            if (fn == NULL || RDB_CB_DELETE_NODE == rc2
+                    || RDB_CB_DELETE_NODE_AND_ABORT == rc2 ||
                                                         RDB_CB_ABORT == rc2 ) {
 
                 if (rc2 == RDB_CB_DELETE_NODE_AND_ABORT) 
@@ -1710,14 +1732,8 @@ int _rdb_iterate (
                     }
                 }
 
-                for (indexCount = 0; indexCount < pool->indexCount; 
-                                                            indexCount++) {
-                    debug ("rdb_iterate: Delete # %d\n", indexCount);
-                    _rdb_delete (pool, indexCount, dataHead, NULL, NULL, 0);
-                }
-#ifdef RDB_POOL_COUNTERS
-                pool->record_count--;
-#endif
+                if (unlink_record(pool, dataHead, NULL, "iterate") < 0)
+                    return RDBFE_ABORT;
 
                 if (del_fn) del_fn(dataHead, delfn_data);
                 else { 
@@ -1790,8 +1806,10 @@ rfeStart:
     if (*resumePtr == NULL) {
         rc = 0;
 
-        if (fn == NULL || RDB_CB_DELETE_NODE == (rc2 = fn (dataHead, data))
-                || RDB_CB_DELETE_NODE_AND_ABORT == rc2 || 
+        if (fn) rc2 = fn(dataHead, data);
+        if (pool->fault.code) return RDBFE_ABORT;
+        if (fn == NULL || RDB_CB_DELETE_NODE == rc2
+                || RDB_CB_DELETE_NODE_AND_ABORT == rc2 ||
                 RDB_CB_ABORT == rc2 ) {
 
             if (rc2 == RDB_CB_DELETE_NODE_AND_ABORT) 
@@ -1809,14 +1827,8 @@ rfeStart:
                 else *resumePtr = NULL ;   // we are the last one;
             }
 
-            for (indexCount = 0; indexCount < pool->indexCount; 
-                    indexCount++) {
-                debug ("rdb_iterate: Delete # %d\n", indexCount);
-                _rdb_delete (pool, indexCount, dataHead, NULL, NULL, 0);
-            }
-#ifdef RDB_POOL_COUNTERS
-            pool->record_count--;
-#endif
+            if (unlink_record(pool, dataHead, NULL, "iterate") < 0)
+                return RDBFE_ABORT;
 
             if (del_fn) del_fn(dataHead, delfn_data);
             else { 
@@ -1879,8 +1891,8 @@ void rdb_iterate(
         return rdb_error("rdb_iterate index outside pool's declared range");
     }
 
-    if (pool->root[index] == NULL) {
-        return;	    // no data is not an error
+    if (pool->fault.code || pool->root[index] == NULL) {
+        return;     // no data is not an error; a fault forbids traversal
     }
 
     if ((pool->FLAGS[index] & RDB_BTREE) == 0) {
@@ -1902,7 +1914,7 @@ void rdb_iterate(
                                 pool->root[index], NULL, 0, &resumePtr);
         }
 	    debug("rc=%d %p\n",rc, resumePtr);
-    } while (rc != 0 && ( rc & RDBFE_ABORT ) != RDBFE_ABORT && 
+    } while (!pool->fault.code && rc != 0 && ( rc & RDBFE_ABORT ) != RDBFE_ABORT &&
                                                     resumePtr != NULL);
 }
 
@@ -2000,7 +2012,7 @@ void rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data)
 
     int cnt;
     
-    if (pool->root[0] == NULL)
+    if (!pool || pool->fault.code || pool->root[0] == NULL)
         return;
 
     if (pool->FLAGS[0] & (RDB_NOKEYS))
@@ -2086,7 +2098,7 @@ int _rdb_delete_by_pointer (
         else pool->root[index] = NULL ;
 
         // We just deleted a leaf, parent need to update balance.
-        return PARENT_BAL_CNG; 
+        return DELETE_SHRANK;
     } else if (ppkDead->right && (ppkDead->left == NULL)) {
         // One child on the right
         if (parent) {
@@ -2100,7 +2112,7 @@ int _rdb_delete_by_pointer (
             pool->root[index] = ppkDead->right; 
 
         // parent need to update balance.
-        return PARENT_BAL_CNG;                  
+        return DELETE_SHRANK;
     }
     else if ((ppkDead->right == NULL) && ppkDead->left) {
         // One chile on left
@@ -2115,17 +2127,15 @@ int _rdb_delete_by_pointer (
             pool->root[index] = ppkDead->left; 
 
         // parent need to update balance.
-        return PARENT_BAL_CNG;
+        return DELETE_SHRANK;
     } else {
         // Two children
 
         debug("rdbDeleteByPointer: a: I should never get here! index = %d, %p %p\n",
                                         index, ppkDead->left, ppkDead->right);
-#ifdef KM
-        return 0;
-#else
-        exit(1);
-#endif
+        return fault_pool(pool, index,
+                (char *)ppkDead - sizeof(PP_T) * index, "delete",
+                "unexpected two-child unlink");
     }
 }
 
@@ -2146,42 +2156,40 @@ int _rdb_delete (
     void   *dataHead;
 
     if (pool->FLAGS[lookupIndex] & (RDB_NOKEYS)) {
-        void   *ptr = NULL;         // NULL to sashhh the compiler
-        int         indexCount;
-        PP_T   *ppk,
-               *ppkRight,
-               *ppkLeft;
-        ptr = data; 
-        indexCount = lookupIndex;
-        if (pool->FLAGS[indexCount] & (RDB_NOKEYS)) {
-            ppk = ptr + (sizeof (PP_T) * indexCount);
+        PP_T *ppk, *ppkRight, *ppkLeft;
+        if (!pool->root[lookupIndex] || !data) return DELETE_MISSING;
 
-            if (ppk->left) ppkLeft = ppk->left ;
-            else ppkLeft = NULL;
+        ppk = data + (sizeof (PP_T) * lookupIndex);
+        ppkLeft = ppk->left;
+        ppkRight = ppk->right;
 
-            if (ppk->right) ppkRight = ppk->right ;
-            else ppkRight = NULL;
+        // These local checks detect broken queue membership without walking it.
+        if ((!ppkLeft && pool->root[lookupIndex] != data) ||
+            (!ppkRight && pool->tail[lookupIndex] != data))
+            return DELETE_MISSING;
+        if ((ppkLeft && ppkLeft->right != ppk) ||
+            (ppkRight && ppkRight->left != ppk) ||
+            (pool->root[lookupIndex] == data && ppkLeft) ||
+            (pool->tail[lookupIndex] == data && ppkRight))
+            return fault_pool(pool, lookupIndex, data, "delete",
+                    "inconsistent queue links");
 
-            if (pool->root[indexCount] == pool->tail[indexCount]) 
-                //we were the last item
-                pool->root[indexCount] = pool->tail[indexCount] = NULL; 
-            else { 
-                if (ppkLeft) ppkLeft->right = ppk->right;
-
-                if (ppkRight) ppkRight->left = ppk->left;
-
-                if (pool->root[indexCount] == ptr) 
-                    pool->root[indexCount] = ppkRight - indexCount;
-
-                if (pool->tail[indexCount] == ptr) 
-                    pool->tail[indexCount] = ppkLeft - indexCount;
-            }
+        if (pool->root[lookupIndex] == pool->tail[lookupIndex])
+            pool->root[lookupIndex] = pool->tail[lookupIndex] = NULL;
+        else {
+            if (ppkLeft) ppkLeft->right = ppkRight;
+            if (ppkRight) ppkRight->left = ppkLeft;
+            if (pool->root[lookupIndex] == data)
+                pool->root[lookupIndex] = ppkRight - lookupIndex;
+            if (pool->tail[lookupIndex] == data)
+                pool->tail[lookupIndex] = ppkLeft - lookupIndex;
         }
+        return DELETE_REMOVED;
     } else if ((pool->FLAGS[lookupIndex] & RDB_BTREE) == RDB_BTREE) {
         debug("Delete:start: \n");
 
         if (pool->root[lookupIndex] == NULL) {
-            return (0);
+            return DELETE_MISSING;
         } else {
             set_pointers (pool, lookupIndex, start, &ppkDead, &dataHead);
             debug("Delete:before compare: \n");
@@ -2199,7 +2207,7 @@ retest_delete_cond:
                     debug("D:left Child!\n");
 
                     if (ppkDead->left == NULL) {
-                        return 0;
+                        return DELETE_MISSING;
                     }
 
                     rc2 = _rdb_delete (pool, lookupIndex, data, ppkDead->left,
@@ -2211,7 +2219,7 @@ retest_delete_cond:
                     debug("D:right Child!\n");
 
                     if (ppkDead->right == NULL) {
-                        return 0;
+                        return DELETE_MISSING;
                     }
 
                     rc2 = _rdb_delete (pool, lookupIndex, data, ppkDead->right,
@@ -2219,7 +2227,8 @@ retest_delete_cond:
                     debug("(R)My Bal After  %d %d\n", ppkDead->balance, rc2);
                 }
 
-                if (PARENT_BAL_CNG == rc2) { // And I am the parent...
+                if (rc2 <= DELETE_MISSING) return rc2;
+                if (DELETE_SHRANK == rc2) { // And I am the parent...
                     ppkParent = (PP_T *) parent + lookupIndex;
                     ppkParent = parent + lookupIndex;
                     debug("- bal  to be changed = %d\n", ppkDead->balance);
@@ -2230,11 +2239,11 @@ retest_delete_cond:
                     if (ppkDead->balance == -1 || ppkDead->balance == 1) {
                         // We moved from balance to -1 or +1 after delete, 
                         // nothing more we need to do
-                        return 0;
+                        return DELETE_REMOVED;
                     } else if (ppkDead->balance == 0) {
                         // We transitioned to zero by delete, need to keep 
                         // balancing up
-                        return PARENT_BAL_CNG;  
+                        return DELETE_SHRANK;
                     } else if (ppkDead->balance < -1) {
                         // Left case rotare
                         debug("Some left rotation ppkDead->left=%p\n", 
@@ -2260,8 +2269,8 @@ retest_delete_cond:
                             ppkDead = ppkRotate;
 
                             if (ppkRotate->balance == -1 || 
-                                    ppkRotate->balance == 1) return 0;
-                            else return PARENT_BAL_CNG;
+                                    ppkRotate->balance == 1) return DELETE_REMOVED;
+                            else return DELETE_SHRANK;
 
                         }
                         else {
@@ -2306,7 +2315,7 @@ retest_delete_cond:
                                                                 lookupIndex;
                             }
 
-                            return PARENT_BAL_CNG;
+                            return DELETE_SHRANK;
                         }
                     }
                     else if (ppkDead->balance > 1) {
@@ -2338,8 +2347,8 @@ retest_delete_cond:
                             ppkDead = ppkRotate;
 
                             if (ppkRotate->balance == -1 || 
-                                            ppkRotate->balance == 1) return 0;
-                            else return PARENT_BAL_CNG;
+                                            ppkRotate->balance == 1) return DELETE_REMOVED;
+                            else return DELETE_SHRANK;
 
                         }
                         else {
@@ -2383,11 +2392,12 @@ retest_delete_cond:
                                                                 lookupIndex;
                             }
 
-                            return PARENT_BAL_CNG;
+                            return DELETE_SHRANK;
                         }
                     }
 
                 }
+                return DELETE_REMOVED;
             }
             else {
                 debug("Delete:compare:- _%d_ idx _%d_ ppkDead = %x\n", rc, 
@@ -2482,120 +2492,129 @@ retest_delete_cond:
         }
     }
 
-    return 0;                                // Should never get here
+    return DELETE_MISSING;                  // Should never get here
 }   
 
 void   *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value)
 {
-    if (!valid_pool_index(pool, idx)) return NULL;
+    if (!valid_pool_index(pool, idx) || pool->fault.code) return NULL;
     debug("Get:pool=%s,idx=%d", pool->name, idx);
     return rdb_delete (pool, idx, &value); //, NULL, 0);
 }
 
-// TODO, make sure rdb_delete works well on trees with both indexed and non-indexed 
-// indexes. ( is that a valid configuration? )
-//
-void   *
-rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data)
+// Every index must confirm removal before count or caller ownership changes.
+static int unlink_record(rdb_pool_t *pool, void *record, PP_T *queue_links,
+        const char *operation)
 {
-
-    if (!valid_pool_index(pool, lookupIndex)) return NULL;
-
-    int     indexCount;
-    void   *ptr = NULL;                     // NULL to hash the compiler
-
-    if (pool->FLAGS[lookupIndex] & (RDB_NOKEYS)) {
-        PP_T   *ppk = NULL,
-               *ppkRight = NULL,
-               *ppkLeft = NULL;
-        ptr = pool->root[lookupIndex]; 
-        if (ptr == NULL)
-            return NULL;
-
-        for (indexCount = 0; indexCount < pool->indexCount; 
-                                                        indexCount++) {
-            if (pool->FLAGS[indexCount] & (RDB_NOKEYS)) {
-                ppk = ptr + (sizeof (PP_T) * indexCount);
-
-                if (ppk->left) 
-                    ppkLeft = ppk->left ;//+ indexCount;
-                else ppkLeft = NULL;
-
-                if (ppk->right) 
-                    ppkRight = ppk->right ;//+ indexCount;
-                else ppkRight = NULL;
-
-                if (pool->root[indexCount] == pool->tail[indexCount]) 
-                        pool->root[indexCount] = pool->tail[indexCount] = NULL;
-                        // We were the last item
-                else { 
-                    if (ppkLeft) ppkLeft->right = ppk->right;
-
-                    if (ppkRight) ppkRight->left = ppk->left;
-
-                    if (pool->root[indexCount] == ptr) pool->root[indexCount] =
-                                                        ppkRight - indexCount;
-
-                    if (pool->tail[indexCount] == ptr) pool->tail[indexCount] =
-                                                        ppkLeft - indexCount;
-                }
-            }
-            else {
-                _rdb_delete (pool, indexCount, ptr, NULL, NULL, 0);
-            }
-        }
+    int index;
+    for (index = 0; index < pool->indexCount; ++index) {
+        if (queue_links && (pool->FLAGS[index] & RDB_NOKEYS))
+            queue_links[index] = ((PP_T *)record)[index];
+        if (_rdb_delete(pool, index, record, NULL, NULL, 0) <= DELETE_MISSING)
+            return fault_pool(pool, index, record, operation,
+                    "record could not be removed from every index");
     }
-    else if (data) {
-        if ((ptr = _rdb_get (pool, lookupIndex, data, NULL, 0)) != NULL)
-            for (indexCount = 0; indexCount < pool->indexCount; indexCount++) {
-                _rdb_delete (pool, indexCount, ptr, NULL, NULL, 0);
-            }
-
-        else
-            debug ("Can't locate delete item\n");
-
-    }
-
 #ifdef RDB_POOL_COUNTERS
-    if (ptr != NULL) pool->record_count--;
+    pool->record_count--;
 #endif
-
-    return ptr;
-}
-int rdb_delete_one (rdb_pool_t *pool, int index, void *data)
-{
-    if (!valid_pool_index(pool, index)) return -1;
-    return _rdb_delete (pool, index, data, NULL, NULL, 0);
-}
-
-// move data (identified by value const, from source tree to destination tree.
-// data is not copied or reallocated, only trees pointers are updated.
-//
-void *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value) {
-    void *ptr;
-    if (!valid_pool_index(src_pool, idx)) return NULL;
-    ptr = rdb_delete (src_pool, idx, &value);
-    if (ptr && rdb_insert (dst_pool, ptr)) return ptr;
-    return NULL;
-}
-
-void *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data) {
-    void *ptr;
-    if (!valid_pool_index(src_pool, idx)) return NULL;
-    ptr = rdb_delete (src_pool, idx, data);
-    if (ptr && rdb_insert (dst_pool, ptr)) return ptr;
     return 0;
 }
 
-// same but slower, with mode debug (not returning a pointer to data)
-int rdb_move2 (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data) {
-    void *ptr;
-    if (!valid_pool_index(src_pool, idx)) return -1;
-    if ((ptr = rdb_delete (src_pool, idx, data))) {
-        if ( dst_pool->indexCount == rdb_insert (dst_pool, ptr)) return 0;
-        return -2;
+static void *delete_record(rdb_pool_t *pool, int index, void *key,
+        PP_T *queue_links)
+{
+    void *record;
+    if (pool->FLAGS[index] & RDB_NOKEYS)
+        record = pool->root[index];
+    else
+        record = key ? _rdb_get(pool, index, key, NULL, 0) : NULL;
+
+    if (!record || unlink_record(pool, record, queue_links, "delete") < 0)
+        return NULL;
+    return record;
+}
+
+void *rdb_delete(rdb_pool_t *pool, int lookupIndex, void *data)
+{
+    if (!valid_pool_index(pool, lookupIndex) || pool->fault.code) return NULL;
+    return delete_record(pool, lookupIndex, data, NULL);
+}
+
+int rdb_delete_one(rdb_pool_t *pool, int index, void *data)
+{
+    int rc;
+    if (!valid_pool_index(pool, index) || !data) return -1;
+    if (pool->fault.code) return RDB_ERR_FAULTED;
+    rc = _rdb_delete(pool, index, data, NULL, NULL, 0);
+    return rc < 0 ? rc : rc == DELETE_SHRANK;
+}
+
+// Callers synchronize both pools and keep keys/comparators stable for the call.
+static int move_record(rdb_pool_t *dst, rdb_pool_t *src, int index, void *key,
+        void **moved)
+{
+    PP_T queue_links[RDB_POOL_MAX_IDX];
+    void *record;
+    int i;
+    *moved = NULL;
+    if (!valid_pool_index(src, index) || src->indexCount > RDB_POOL_MAX_IDX)
+        return -1;
+    if (src->fault.code || (dst && dst->fault.code)) return RDB_ERR_FAULTED;
+
+    record = delete_record(src, index, key, queue_links);
+    if (!record) return src->fault.code ? RDB_ERR_FAULTED : -1;
+
+    if (dst && dst->indexCount && dst->indexCount <= RDB_POOL_MAX_IDX) {
+        if (rdb_insert(dst, record) == dst->indexCount) {
+            *moved = record;
+            return 0;
+        }
+        if (dst->fault.code)
+            return fault_pool(src, index, record, "move",
+                    "destination rollback failed; record may remain linked there");
+    } else {
+        rdb_error("Move destination has no valid index layout");
     }
-    return -1;
+
+    // A rejected destination insert is recoverable if source membership can
+    // be restored. Queue indexes also need their exact former positions back.
+    if (rdb_insert(src, record) != src->indexCount)
+        return fault_pool(src, index, record, "move rollback",
+                "source restoration failed; check locking and comparators");
+    for (i = 0; i < src->indexCount; ++i) {
+        PP_T *link;
+        if (!(src->FLAGS[i] & RDB_NOKEYS)) continue;
+        if (_rdb_delete(src, i, record, NULL, NULL, 0) <= DELETE_MISSING)
+            return fault_pool(src, i, record, "move rollback",
+                    "queue position restoration failed");
+        link = (PP_T *)record + i;
+        *link = queue_links[i];
+        if (link->left) ((PP_T *)link->left)->right = link;
+        else src->root[i] = record;
+        if (link->right) ((PP_T *)link->right)->left = link;
+        else src->tail[i] = record;
+    }
+    return -2;
+}
+
+// Move record data without copying or reallocating it.
+void *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx,
+        __intmax_t value)
+{
+    return rdb_move(dst_pool, src_pool, idx, &value);
+}
+
+void *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data)
+{
+    void *moved;
+    move_record(dst_pool, src_pool, idx, data, &moved);
+    return moved;
+}
+
+int rdb_move2 (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data)
+{
+    void *moved;
+    return move_record(dst_pool, src_pool, idx, data, &moved);
 }
 
 #ifdef KM

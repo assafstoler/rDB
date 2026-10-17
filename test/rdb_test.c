@@ -935,7 +935,10 @@ int main(int argc, char *argv[]) {
 
         // To test failed insert due to mixed index....
         // add '8' record to pool2
-        rc = rdb_insert (pool2, rdb_get_const (pool1, 2, 8));
+        ptd = rdb_get_const(pool1, 2, 8);
+        test_data_t copy8 = *ptd;
+        memset(copy8.pp, 0, sizeof(copy8.pp));
+        rc = rdb_insert (pool2, &copy8);
         printf("insert return = %d\n", rc);
         info ("dump pool2 :");
         rdb_iterate(pool2,1,(void *) &my_dump_clean, NULL, NULL, NULL);

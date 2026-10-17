@@ -55,6 +55,13 @@ APIs return `NULL`; `rdb_insert_one()`, `rdb_delete_one()`, and `rdb_move2()`
 return `-1`. `rdb_get_neigh()` clears both neighbor outputs. `rdb_iterate()` and
 `rdb_dump()` report an error and do no traversal or output.
 
+If rDB detects an inconsistent index while changing a record, it stores the
+first failure in that pool and returns `RDB_ERR_FAULTED` from integer APIs that
+can report it. `rdb_pool_get_fault()` retrieves the saved index, record,
+operation, and reason. Lookups return `NULL`, and iteration, dump, and flush do
+no work on a faulted pool. Drop the pool after inspecting or recovering its
+records; the drop operation releases pool metadata but does not free records.
+
 
 Quick Start - un-managed (um) data pools (Please see demo / doc folders for a more in-depth knowledge)
 
