@@ -26,14 +26,14 @@ static rdb_pool_t *make_pool(const char *name, int indexes)
     const int key_offset = (int)(offsetof(record_t, key) -
             sizeof(rdb_bpp_t) * indexes);
     rdb_pool_t *pool = rdb_register_um_pool((char *)name, indexes,
-            key_offset, RDB_BTREE | RDB_KINT32, NULL);
+            key_offset, RDB_BTREE | RDB_KINT32, NULL, 0);
     CHECK(pool != NULL);
     if (!pool)
         return NULL;
 
     for (int index = 1; index < indexes; ++index)
         CHECK(rdb_register_um_idx(pool, index, key_offset,
-                    RDB_BTREE | RDB_KINT32, NULL) == index);
+                    RDB_BTREE | RDB_KINT32, NULL, 0) == index);
     return pool;
 }
 

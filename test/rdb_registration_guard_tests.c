@@ -27,7 +27,7 @@ static int compare_keys(void *left, void *right)
     return (b > a) - (b < a);
 }
 
-typedef rdb_pool_t *(*create_pool_fn)(char *, int, int, int, void *);
+typedef rdb_pool_t *(*create_pool_fn)(char *, int, int, int, void *, size_t);
 
 static const create_pool_fn create_pool[] = {
     rdb_register_um_pool,
@@ -44,11 +44,11 @@ static void test_index_counts(void)
             snprintf(name, sizeof(name), "bad-count-%zu-%zu", api, i);
 
             CHECK(create_pool[api](name, counts[i], 0,
-                        RDB_BTREE | RDB_KINT32, NULL) == NULL);
+                        RDB_BTREE | RDB_KINT32, NULL, 0) == NULL);
             CHECK(rdb_find_pool_by_name(name) == NULL);
 
             rdb_pool_t *retry = rdb_register_um_pool(name, 1, 0,
-                    RDB_BTREE | RDB_KFIFO, NULL);
+                    RDB_BTREE | RDB_KFIFO, NULL, 0);
             CHECK(retry != NULL);
             if (retry)
                 rdb_drop_pool(retry);
@@ -59,7 +59,7 @@ static void test_index_counts(void)
 static void test_index_ranges(void)
 {
     rdb_pool_t *pool = rdb_register_um_pool("index-ranges", 2, 0,
-            RDB_BTREE | RDB_KINT32, NULL);
+            RDB_BTREE | RDB_KINT32, NULL, 0);
     CHECK(pool != NULL);
     if (!pool)
         return;
@@ -68,11 +68,11 @@ static void test_index_ranges(void)
     CHECK(rdb_pool_get_fault(pool, &fault) == 0);
     CHECK(fault.code == 0);
 
-    CHECK(rdb_register_um_idx(pool, 0, 0, RDB_BTREE | RDB_KINT32, NULL) == -1);
-    CHECK(rdb_register_um_idx(pool, -1, 0, RDB_BTREE | RDB_KINT32, NULL) == -2);
-    CHECK(rdb_register_um_idx(pool, 2, 0, RDB_BTREE | RDB_KINT32, NULL) == -2);
+    CHECK(rdb_register_um_idx(pool, 0, 0, RDB_BTREE | RDB_KINT32, NULL, 0) == -1);
+    CHECK(rdb_register_um_idx(pool, -1, 0, RDB_BTREE | RDB_KINT32, NULL, 0) == -2);
+    CHECK(rdb_register_um_idx(pool, 2, 0, RDB_BTREE | RDB_KINT32, NULL, 0) == -2);
     CHECK(rdb_register_um_idx(pool, RDB_POOL_MAX_IDX, 0,
-                RDB_BTREE | RDB_KINT32, NULL) == -2);
+                RDB_BTREE | RDB_KINT32, NULL, 0) == -2);
     CHECK(pool->FLAGS[1] == 0);
 
     test_record_t *record = calloc(1, sizeof(*record));
@@ -84,7 +84,7 @@ static void test_index_ranges(void)
         rdb_bpp_t links[2];
         memcpy(links, record->links, sizeof(links));
         CHECK(rdb_register_um_idx(pool, 1, 0,
-                    RDB_BTREE | RDB_KINT32, NULL) == 1);
+                    RDB_BTREE | RDB_KINT32, NULL, 0) == 1);
         CHECK(pool->FLAGS[1] == (RDB_BTREE | RDB_KINT32));
         CHECK(memcmp(links, record->links, sizeof(links)) == 0);
         CHECK(rdb_get_const(pool, 0, 42) == record);
@@ -126,7 +126,7 @@ static void test_flag_validation(void)
         snprintf(name, sizeof(name), "bad-flags-%zu", i);
         for (size_t api = 0; api < sizeof(create_pool) / sizeof(create_pool[0]); ++api) {
             CHECK(create_pool[api](name, 2, 0, rejected[i].flags,
-                        rejected[i].compare_fn) == NULL);
+                        rejected[i].compare_fn, 0) == NULL);
             CHECK(rdb_find_pool_by_name(name) == NULL);
         }
     }
@@ -134,13 +134,13 @@ static void test_flag_validation(void)
 #ifndef USE_128_BIT_TYPES
     for (size_t i = 0; i < sizeof(unavailable) / sizeof(unavailable[0]); ++i) {
         CHECK(rdb_register_um_pool("unavailable-key", 1, 0,
-                    unavailable[i], NULL) == NULL);
+                    unavailable[i], NULL, 0) == NULL);
         CHECK(rdb_find_pool_by_name("unavailable-key") == NULL);
     }
 #endif
 
     rdb_pool_t *pool = rdb_register_um_pool("retry-flags", 2, 0,
-            RDB_BTREE | RDB_KINT32, NULL);
+            RDB_BTREE | RDB_KINT32, NULL, 0);
     CHECK(pool != NULL);
     if (!pool)
         return;
@@ -154,13 +154,13 @@ static void test_flag_validation(void)
         memcpy(links, record->links, sizeof(links));
 
         CHECK(rdb_register_um_idx(pool, 1, 0,
-                    RDB_BTREE | RDB_KCF, NULL) == -4);
+                    RDB_BTREE | RDB_KCF, NULL, 0) == -4);
         CHECK(pool->FLAGS[1] == 0);
         CHECK(memcmp(links, record->links, sizeof(links)) == 0);
         CHECK(rdb_get_const(pool, 0, 42) == record);
 
         CHECK(rdb_register_um_idx(pool, 1, 0,
-                    RDB_BTREE | RDB_KINT32, NULL) == 1);
+                    RDB_BTREE | RDB_KINT32, NULL, 0) == 1);
         CHECK(rdb_insert_one(pool, 1, record) >= 0);
         CHECK(rdb_get_const(pool, 1, 42) == record);
         rdb_flush(pool, NULL, NULL);

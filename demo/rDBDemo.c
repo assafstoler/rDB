@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
                             INDEXES, 
                             0, //(void *) &dd.age - (void *) dd.name,
                             RDB_KSTR | RDB_KASC | RDB_BTREE,
-                            NULL);
+                            NULL, sizeof(dd.name));
     if (pool == NULL) rdb_fatal("pool registration failed\n");
 
     // Registering the 3 other indexes for out data structure.
@@ -156,19 +156,19 @@ int main(int argc, char *argv[]) {
                             1, 
                             (void *) &dd.address_ptr- (void *) &dd.name,
                             RDB_KPSTR | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) rdb_fatal("Failed to register index 1\n");
+                            NULL, 0) == -1) rdb_fatal("Failed to register index 1\n");
 	
     if (rdb_register_um_idx(pool,
                             2, 
                             (void *) &dd.age - (void *) &dd.name,
                             RDB_KUINT32 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) rdb_fatal("Failed to register index 2\n");
+                            NULL, 0) == -1) rdb_fatal("Failed to register index 2\n");
 
     if (rdb_register_um_idx(pool,
                             3, 
                             (void *) &dd.long_value - (void *) &dd.name,
                             RDB_KINT64 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) rdb_fatal("Failed to register index 3\n");
+                            NULL, 0) == -1) rdb_fatal("Failed to register index 3\n");
 
 
     simple_demo(pool);

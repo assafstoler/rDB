@@ -83,7 +83,7 @@ extern "C" {
 
 #define RDB_KFIFO   (1 << 0 )   // No key - make a FIFO in essence. uses one BPP_t 
 #define RDB_KLIFO   (1 << 1 )   // No key - make a LIFO / stack in essence. uses one BPP_t 
-#define RDB_KCF     (1 << 2 )   // use custom function to check index order. key type N/A
+#define RDB_KCF     (1 << 2 )   // comparator uses a registered supported key layout
 #define RDB_KSTR	(1 << 3 )	// Key is a string
 #define RDB_KPSTR	(1 << 4 )   // Key is a pointer to a string
 #define RDB_KINT8	(1 << 5 )	// Key is an 8 bit integer
@@ -101,6 +101,7 @@ extern "C" {
 #define RDB_KPTR     (1 << 17)  // Key is a native pointer.
 #define RDB_KSIZE_t  (1 << 18)  // Key is an unsigned native (size_t)
 #define RDB_KSSIZE_t (1 << 19)  // Key is a signed natve (ssize_t)
+#define RDB_KCFUT    (1U << 20) // custom function - user types; not reindexable
 
 // special case keys
 #define RDB_KTME	(1 << 25)	// Key is a time_t structure
@@ -117,7 +118,7 @@ extern "C" {
 #define RDB_KEYS (RDB_KPSTR | RDB_KSTR | RDB_KINT8 | RDB_KUINT8 | RDB_KINT16 | \
     RDB_KUINT16 | RDB_KINT32 | RDB_KUINT32 | RDB_KINT64 | RDB_KUINT64 | \
     RDB_KINT128 | RDB_KUINT128 | RDB_KPTR | RDB_KSIZE_t | RDB_KSSIZE_t | RDB_KTME | \
-    RDB_KTMA | RDB_KCF)
+    RDB_KTMA | RDB_KCF | RDB_KCFUT)
 #define RDB_NOKEYS (RDB_KFIFO | RDB_KLIFO)
 
 #define RDB_TREE_LEFT   0
@@ -133,6 +134,25 @@ extern "C" {
 #define RDB_CB_ABORT        -5  		// stop iterating the tree
 
 #define RDB_POOL_MAX_IDX 24      		// how many indexes we allow on each pool (tree)
+#define RDB_INDEX_MASK(index) (1U << (unsigned)(index))
+
+// rdb_iterate_reindex return values and initialization options.
+#define RDB_ITERATE_ABORTED 1
+#define RDB_ERR_REINDEX_CONFLICT (-6)
+#define RDB_ERR_REINDEX_UNSUPPORTED (-7)
+#define RDB_ERR_REINDEX_UNMARKED (-8)
+#define RDB_ERR_REINDEX_INVALID (-9)
+#define RDB_ERR_REINDEX_NOMEM (-10)
+#define RDB_INIT_ALLOW_KCFUT (1U << 0)
+
+typedef uint32_t rdb_index_mask_t;
+typedef struct rdb_reindex_ctx rdb_reindex_ctx_t;
+
+typedef struct {
+    size_t offset;  // from the comparator key base
+    uint32_t type;  // scalar, RDB_KPTR, RDB_KPSTR or RDB_KSTR component
+    size_t size;    // capacity for RDB_KSTR; zero for other component types
+} rdb_kcf_key_part_t;
 
 #ifdef USE_128_BIT_TYPES
 #define __intmax_t __int128_t
@@ -256,25 +276,36 @@ typedef struct RDB_POOLS {
     uint32_t        record_count;
     // Zero until a consistency failure is recorded.
     rdb_fault_info_t fault;
+    // Private index metadata, managed by rDB.
+    void *private_data;
 }  rdb_pool_t;
 
 
 extern char   	*rdb_error_string;
 void        rdb_init(void);
+// Set process-wide options before registering pools. By default, reindex
+// iteration rejects pools containing RDB_KCFUT. Allowing them permits
+// traversal, but RDB_KCFUT indexes themselves still cannot be reindexed.
+int         rdb_init_ex(uint32_t flags);
 // Return -1 for NULL, 0 for a healthy pool, or 1 for a faulted pool.
 // If out is non-NULL, copy the saved fault information into it.
 int         rdb_pool_get_fault(const rdb_pool_t *pool, rdb_fault_info_t *out);
 int         rdb_error_value (int rv, char *err);
 void        rdb_error (char *err);
 rdb_pool_t *rdb_find_pool_by_name (char *poolName);
+// key_size is the inline buffer capacity for RDB_KSTR and zero for every
+// other primary index.
 rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset,
-                int FLAGS, void *compare_fn);
+                int FLAGS, void *compare_fn, size_t key_size);
 rdb_pool_t *rdb_register_um_pool (char *poolName, 
-	            int idxCount, int key_offset, int FLAGS, void *fn);
+	            int idxCount, int key_offset, int FLAGS, void *fn,
+                size_t key_size);
 void        rdb_clean(int);
 void        rdb_gc(void);
+// For a direct RDB_KSTR index, key_size is the inline buffer capacity;
+// pass zero for all other index types (including RDB_KCF layouts).
 int         rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
-                int FLAGS, void *compare_fn);
+                int FLAGS, void *compare_fn, size_t key_size);
 int         rdb_lock(rdb_pool_t *pool, const char *parent); 
 void         rdb_unlock(rdb_pool_t *pool, const char *parent);
 int         rdb_insert (rdb_pool_t *pool, void *data);
@@ -284,6 +315,40 @@ void       *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value);
 void       *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after);
 void        rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
                 void *fn_data, void del_fn(void *, void *), void *del_data);
+typedef int (*rdb_iterate_reindex_fn)(void *record, void *user_data,
+        rdb_reindex_ctx_t *ctx);
+// The callback must make a shallow copy of the record and change index fields
+// only on that copy. Submit every changed supported index with
+// rdb_reindex_check_apply(). The record passed by rDB must remain unchanged.
+// Accepted keys are retained by rDB and applied after callbacks finish;
+// validation errors stop iteration, while earlier accepted keys are applied.
+// RDB_KCF layouts must be registered before records are inserted. Pools with
+// RDB_KCFUT indexes are rejected unless RDB_INIT_ALLOW_KCFUT was selected;
+// those indexes must remain unchanged during reindex iteration.
+int         rdb_iterate_reindex(rdb_pool_t *pool, int index,
+                rdb_iterate_reindex_fn fn, void *fn_data,
+                void del_fn(void *, void *), void *del_data);
+// Validate and retain changed keys from candidate_record. A zero result means
+// the proposal is unique against current and already-staged keys. It does not
+// edit the live record or tree. The context and record argument are valid only
+// for the active callback. Any index changed on the candidate must be marked;
+// unsupported or unmarked edits fail and abort iteration.
+int         rdb_reindex_check_apply(rdb_reindex_ctx_t *ctx, void *record,
+                const void *candidate_record, rdb_index_mask_t changed_indexes);
+// Make a private, bounded edit copy of a KPSTR key component and point the
+// candidate field at it. Edit the returned buffer, then submit the candidate
+// with rdb_reindex_check_apply(); rDB retains the accepted value and releases
+// the edit buffer when the callback returns.
+int         rdb_reindex_kpstr_edit(rdb_reindex_ctx_t *ctx, void *record,
+                void *candidate_record, int index, size_t part_offset,
+                size_t capacity, char **edit_buffer);
+// Describe the fields read by an RDB_KCF comparator. Offsets are relative to
+// that index's key base; RDB_KSTR parts require their buffer capacity in size.
+// Register once, before inserting records into the index.
+int         rdb_register_kcf_key_parts(rdb_pool_t *pool, int index,
+                const rdb_kcf_key_part_t *parts, size_t part_count);
+// rDB owns KPSTR values in registered indexes: it frees and clears them when
+// records are deleted by iteration or rdb_flush, before calling del_fn.
 void        rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data);
 // Indexed record operations require 0 <= index < pool->indexCount and
 // index < RDB_POOL_MAX_IDX (the source index for moves). Invalid indexes leave

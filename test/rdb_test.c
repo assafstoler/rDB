@@ -270,7 +270,7 @@ int register_pool_1() {
                             TEST_INDEXES, 
                             0, // offset if first index. usually it's zero
                             RDB_KSTR | RDB_KASC | RDB_BTREE,
-                            NULL);
+                            NULL, sizeof(td.string));
     if (pool1 == NULL) return -1;
 
     // Registering the other indexes for our data structure.
@@ -278,81 +278,81 @@ int register_pool_1() {
                             IDX_PSTR, 
                             (void *) &td.string_ptr- (void *) &td.string,
                             RDB_KPSTR | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
      
     if (rdb_register_um_idx(pool1,
                             IDX_UI8, 
                             (void *) &td.ui8 - (void *) &td.string,
                             RDB_KUINT8 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool1,
                             IDX_I8, 
                             (void *) &td.i8 - (void *) &td.string,
                             RDB_KINT8 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool1,
                             IDX_UI16, 
                             (void *) &td.ui16 - (void *) &td.string,
                             RDB_KUINT16 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool1,
                             IDX_I16, 
                             (void *) &td.i16 - (void *) &td.string,
                             RDB_KINT16 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool1,
                             IDX_UI32, 
                             (void *) &td.ui32 - (void *) &td.string,
                             RDB_KUINT32 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool1,
                             IDX_I32, 
                             (void *) &td.i32 - (void *) &td.string,
                             RDB_KINT32 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool1,
                             IDX_UI64, 
                             (void *) &td.ui64 - (void *) &td.string,
                             RDB_KUINT64 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool1,
                             IDX_I64, 
                             (void *) &td.i64 - (void *) &td.string,
                             RDB_KINT64 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
 #ifdef USE_128_BIT_TYPES
     if (rdb_register_um_idx(pool1,
                             IDX_UI128, 
                             (void *) &td.ui128 - (void *) &td.string,
                             RDB_KUINT128 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool1,
                             IDX_I128, 
                             (void *) &td.i128 - (void *) &td.string,
                             RDB_KINT128 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 #else 
     // use 64 for tests to be able to pass regardless
     if (rdb_register_um_idx(pool1,
                             IDX_UI128, 
                             (void *) &td.ui64 - (void *) &td.string,
                             RDB_KUINT64 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool1,
                             IDX_I128, 
                             (void *) &td.i64 - (void *) &td.string,
                             RDB_KINT64 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 #endif
 /*    if (rdb_register_um_idx(pool1,
                             IDX_UI256, 
@@ -370,31 +370,31 @@ int register_pool_1() {
                             IDX_CUSTOM_1, 
                             (void *) &td.ud1 - (void *) &td.string,
                             RDB_KCF | RDB_KASC | RDB_BTREE,
-                            compare_custom_index) == -1) return -1;
+                            compare_custom_index, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool1,
                             IDX_CUSTOM_2, 
                             (void *) &td.ui8 - (void *) &td.string,
                             RDB_KCF | RDB_KASC | RDB_BTREE,
-                            compare_custom_2_index) == -1) return -1;
+                            compare_custom_2_index, 0) == -1) return -1;
     
     if (rdb_register_um_idx(pool1,
                             IDX_FIFO, 
                             0,
                             RDB_KFIFO | RDB_NO_IDX | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
     
     if (rdb_register_um_idx(pool1,
                             IDX_LIFO, 
                             0,
                             RDB_KLIFO | RDB_NO_IDX | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
     
     if (rdb_register_um_idx(pool1,
                             IDX_KPTR, 
                             (void *) &td.string_ptr - (void *) &td.string,
                             RDB_KPTR | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     return 0;
 }
@@ -405,7 +405,7 @@ int register_pool_2() {
                             TEST_INDEXES, 
                             0, // offset if first index. usually it's zero
                             RDB_KSTR | RDB_KASC | RDB_BTREE,
-                            NULL);
+                            NULL, sizeof(td.string));
     if (pool2 == NULL) return -1;
 
     // Registering the other indexes for our data structure.
@@ -413,68 +413,68 @@ int register_pool_2() {
                             IDX_PSTR, 
                             (void *) &td.string_ptr- (void *) &td.string,
                             RDB_KPSTR | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
      
     if (rdb_register_um_idx(pool2,
                             IDX_UI8, 
                             (void *) &td.ui8 - (void *) &td.string,
                             RDB_KUINT8 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_I8, 
                             (void *) &td.i8 - (void *) &td.string,
                             RDB_KINT8 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_UI16, 
                             (void *) &td.ui16 - (void *) &td.string,
                             RDB_KUINT16 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_I16, 
                             (void *) &td.i16 - (void *) &td.string,
                             RDB_KINT16 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_UI32, 
                             (void *) &td.ui32 - (void *) &td.string,
                             RDB_KUINT32 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_I32, 
                             (void *) &td.i32 - (void *) &td.string,
                             RDB_KINT32 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_UI64, 
                             (void *) &td.ui64 - (void *) &td.string,
                             RDB_KUINT64 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_I64, 
                             (void *) &td.i64 - (void *) &td.string,
                             RDB_KINT64 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
 #ifdef USE_128_BIT_TYPES
     if (rdb_register_um_idx(pool2,
                             IDX_UI128, 
                             (void *) &td.ui128 - (void *) &td.string,
                             RDB_KUINT128 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_I128, 
                             (void *) &td.i128 - (void *) &td.string,
                             RDB_KINT128 | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
 #endif
 
 /*    if (rdb_register_um_idx(pool2,
@@ -493,31 +493,31 @@ int register_pool_2() {
                             IDX_CUSTOM_1, 
                             (void *) &td.ud1 - (void *) &td.string,
                             RDB_KCF | RDB_KASC | RDB_BTREE,
-                            compare_custom_index) == -1) return -1;
+                            compare_custom_index, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_CUSTOM_2, 
                             (void *) &td.ui8 - (void *) &td.string,
                             RDB_KCF | RDB_KASC | RDB_BTREE,
-                            compare_custom_2_index) == -1) return -1;
+                            compare_custom_2_index, 0) == -1) return -1;
 
     if (rdb_register_um_idx(pool2,
                             IDX_FIFO, 
                             0,
                             RDB_KFIFO | RDB_NO_IDX | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
     
     if (rdb_register_um_idx(pool2,
                             IDX_LIFO, 
                             0,
                             RDB_KLIFO | RDB_NO_IDX | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
     
     if (rdb_register_um_idx(pool2,
                             IDX_KPTR, 
                             (void *) &td.string_ptr - (void *) &td.string,
                             RDB_KPTR | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
     
     return 0;
 }
@@ -528,14 +528,14 @@ int register_pool_3() {
                             2, 
                             0, // offset if first index. usually it's zero
                             RDB_KFIFO | RDB_NO_IDX | RDB_BTREE,
-                            NULL);
+                            NULL, 0);
     if (pool3 == NULL) return -1;
 
     if (rdb_register_um_idx(pool3,
                             1, 
                             0,
                             RDB_KLIFO | RDB_NO_IDX | RDB_BTREE,
-                            NULL) == -1) return -1;
+                            NULL, 0) == -1) return -1;
     
     return 0;
 }
@@ -897,7 +897,7 @@ int main(int argc, char *argv[]) {
                             1, 
                             0, // offset of first index. usually it's zero
                             RDB_KSTR | RDB_KASC | RDB_BTREE,
-                            NULL);
+                            NULL, sizeof(td.string));
         if (pool4 == NULL) return -1;
         if (-1 == add_one_test_data(pool4,2))
             rdb_fatal ("FAIL"); //%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
@@ -1141,21 +1141,21 @@ int main(int argc, char *argv[]) {
                             TEST_INDEXES, 
                             0, // offset if first index. usually it's zero
                             RDB_KCF | RDB_KASC | RDB_BTREE,
-                            NULL);
+                            NULL, 0);
         if (pool2 == NULL) info("%s\n", rdb_error_string);
         
         pool2 = rdb_register_um_pool("null_custom_pool", 
                             TEST_INDEXES, 
                             0, // offset if first index. usually it's zero
                             RDB_KCF | RDB_KASC | RDB_BTREE,
-                            NULL);
+                            NULL, 0);
         if (pool2 == NULL) info("%s\n", rdb_error_string);
      
         if (rdb_register_um_idx(pool1,
                             0, 
                             (void *) &td.string_ptr- (void *) &td.string,
                             RDB_KPSTR | RDB_KASC | RDB_BTREE,
-                            NULL) == -1) {
+                            NULL, 0) == -1) {
             info("%s\n", rdb_error_string);
         }
         
@@ -1163,7 +1163,7 @@ int main(int argc, char *argv[]) {
                             RDB_POOL_MAX_IDX, 
                             (void *) &td.string_ptr- (void *) &td.string,
                             RDB_KPSTR | RDB_KASC | RDB_BTREE,
-                            NULL) < 0) {
+                            NULL, 0) < 0) {
             info("%s\n", rdb_error_string);
         }
         
@@ -1171,7 +1171,7 @@ int main(int argc, char *argv[]) {
                             1, 
                             (void *) &td.string_ptr- (void *) &td.string,
                             RDB_KPSTR | RDB_KASC | RDB_BTREE,
-                            NULL) < 0) {
+                            NULL, 0) < 0) {
             info("%s\n", rdb_error_string);
         }
 
@@ -1179,7 +1179,7 @@ int main(int argc, char *argv[]) {
                             RDB_POOL_MAX_IDX -1, 
                             0,
                             /*RDB_KPSTR | */  RDB_KASC | RDB_BTREE,
-                            NULL) < 0) {
+                            NULL, 0) < 0) {
             info("%s\n", rdb_error_string);
         }
         

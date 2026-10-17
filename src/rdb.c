@@ -80,6 +80,45 @@
 
 rdb_pool_t  *pool_root;
 
+typedef struct {
+    rdb_kcf_key_part_t *parts;
+    size_t part_count;
+    size_t key_size;
+} rdb_kcf_index_t;
+
+typedef struct {
+    rdb_kcf_index_t index[RDB_POOL_MAX_IDX];
+} rdb_pool_private_t;
+
+typedef struct rdb_reindex_key {
+    unsigned char *bytes;
+    size_t size;
+} rdb_reindex_key_t;
+
+typedef struct rdb_reindex_entry {
+    void *record;
+    rdb_index_mask_t indexes;
+    rdb_reindex_key_t keys[RDB_POOL_MAX_IDX];
+    struct rdb_reindex_entry *next;
+} rdb_reindex_entry_t;
+
+typedef struct rdb_reindex_temp {
+    char *buffer;
+    size_t capacity;
+    struct rdb_reindex_temp *next;
+} rdb_reindex_temp_t;
+
+struct rdb_reindex_ctx {
+    rdb_pool_t *pool;
+    void *record;
+    int error;
+    rdb_reindex_entry_t *entries;
+    rdb_reindex_entry_t **entries_tail;
+    rdb_reindex_temp_t *temps;
+};
+
+static uint32_t rdb_init_flags;
+
 
 //struct  RDB_POOLS **poolIds;
 
@@ -110,11 +149,20 @@ pthread_mutex_t rdb_error_mutex = PTHREAD_MUTEX_INITIALIZER;
 // function
 void rdb_init (void)
 {
+    (void)rdb_init_ex(0);
+}
+
+int rdb_init_ex(uint32_t flags)
+{
+    if (flags & ~RDB_INIT_ALLOW_KCFUT)
+        return rdb_error_value(-1, "rdb_init_ex called with unsupported flags");
 #ifdef KM
     sema_init(&reg_mutex, 1);
     sema_init(&rdb_error_mutex, 1);
 #endif
     pool_root = NULL;
+    rdb_init_flags = flags;
+    return 0;
 }
 
 int rdb_pool_get_fault(const rdb_pool_t *pool, rdb_fault_info_t *out)
@@ -206,6 +254,54 @@ static int valid_pool_index(const rdb_pool_t *pool, int index)
             index < pool->indexCount;
 }
 
+static size_t reindex_type_size(uint32_t type, size_t declared_size)
+{
+    switch (type) {
+        case RDB_KSTR: return declared_size;
+        case RDB_KPSTR: return sizeof(char *);
+        case RDB_KPTR: return sizeof(void *);
+        case RDB_KINT8: case RDB_KUINT8: return sizeof(uint8_t);
+        case RDB_KINT16: case RDB_KUINT16: return sizeof(uint16_t);
+        case RDB_KINT32: case RDB_KUINT32: return sizeof(uint32_t);
+        case RDB_KINT64: case RDB_KUINT64: return sizeof(uint64_t);
+        case RDB_KSIZE_t: return sizeof(size_t);
+        case RDB_KSSIZE_t: return sizeof(ssize_t);
+#ifdef USE_128_BIT_TYPES
+        case RDB_KINT128: case RDB_KUINT128: return sizeof(__int128_t);
+#endif
+        default: return 0;
+    }
+}
+
+static rdb_kcf_index_t *kcf_index_meta(rdb_pool_t *pool, int index)
+{
+    rdb_pool_private_t *private_data = pool ? pool->private_data : NULL;
+    if (!private_data || !valid_pool_index(pool, index))
+        return NULL;
+    return &private_data->index[index];
+}
+
+static int valid_key_size(uint32_t flags, size_t key_size)
+{
+    uint32_t kind = flags & RDB_KEYS;
+    return kind == RDB_KSTR ? key_size > 0 : key_size == 0;
+}
+
+static int set_key_size(rdb_pool_t *pool, int index, size_t key_size)
+{
+    rdb_pool_private_t *private_data;
+    if (!key_size) return 0;
+    private_data = pool->private_data;
+    if (!private_data) {
+        private_data = rdb_alloc(sizeof(*private_data));
+        if (!private_data) return RDB_ERR_REINDEX_NOMEM;
+        memset(private_data, 0, sizeof(*private_data));
+        pool->private_data = private_data;
+    }
+    private_data->index[index].key_size = key_size;
+    return 0;
+}
+
 // If you lost your pool handle, or more likely, you are working in a multi-
 // threaded application, and you need to attach to a data pool you did not
 // create, you can use this function to retrieve the matching rDB handle.
@@ -270,7 +366,7 @@ static int valid_index_flags(const char *name, int index, uint32_t flags,
         | RDB_KINT128 | RDB_KUINT128
 #endif
         ;
-    const uint32_t kinds = builtins | RDB_KCF | RDB_NOKEYS;
+    const uint32_t kinds = builtins | RDB_KCF | RDB_KCFUT | RDB_NOKEYS;
     const uint32_t allowed = kinds | RDB_BTREE | RDB_KASC | (uint32_t)RDB_NO_IDX;
     const uint32_t kind = flags & kinds;
     const char *reason = NULL;
@@ -291,6 +387,8 @@ static int valid_index_flags(const char *name, int index, uint32_t flags,
         reason = "FIFO/LIFO cannot use a comparator";
     else if (kind == RDB_KCF && !compare_fn)
         reason = "RDB_KCF requires a comparator";
+    else if (kind == RDB_KCFUT && !compare_fn)
+        reason = "RDB_KCFUT requires a comparator";
 
     if (reason) {
         char message[256];
@@ -390,6 +488,8 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
 // rDB Iternal: drop a new pool from our pool chain
 void rdb_drop_pool (rdb_pool_t *pool) {
     rdb_pool_t *prev, *next;
+    rdb_pool_private_t *private_data;
+    int index;
 
     if (pool && pool->name); // info("dropping %s\n", pool->name);
     else return;
@@ -418,6 +518,14 @@ void rdb_drop_pool (rdb_pool_t *pool) {
         rdb_free (pool->name);
     }
 
+    private_data = pool->private_data;
+    if (private_data) {
+        for (index = 0; index < RDB_POOL_MAX_IDX; ++index)
+            if (private_data->index[index].parts)
+                rdb_free(private_data->index[index].parts);
+        rdb_free(private_data);
+    }
+
     if (pool) {
         rdb_free(pool) ;
         pool = NULL;
@@ -432,7 +540,8 @@ rdb_pool_t *rdb_add_pool (
         int indexCount, 
         int key_offset, 
         int FLAGS, 
-        void *compare_fn) {
+        void *compare_fn,
+        size_t key_size) {
 
     rdb_pool_t *pool;
     int name_length;
@@ -448,6 +557,10 @@ rdb_pool_t *rdb_add_pool (
 
     if (!valid_index_flags(poolName, 0, (uint32_t)FLAGS, compare_fn))
         return NULL;
+    if (!valid_key_size((uint32_t)FLAGS, key_size)) {
+        rdb_error("RDB_KSTR indexes require a nonzero key size; other indexes require zero");
+        return NULL;
+    }
 
     pool = rdb_alloc(sizeof (rdb_pool_t));
 
@@ -457,6 +570,11 @@ rdb_pool_t *rdb_add_pool (
     }
 
     memset (pool, 0, sizeof (rdb_pool_t));
+
+    if (set_key_size(pool, 0, key_size) < 0) {
+        rdb_free(pool);
+        return NULL;
+    }
 
     // inserting myself to the top of the pool, why? 
     // because it is easy, don't need to look for the end of the pool chain
@@ -473,6 +591,7 @@ rdb_pool_t *rdb_add_pool (
         rdb_error ("rDB: Fatal: pool allocation error, out of memor for pool"
                 " name");
         pool_root = pool->next;
+        if (pool->private_data) rdb_free(pool->private_data);
         rdb_free (pool);
         return NULL;
     }
@@ -484,6 +603,7 @@ rdb_pool_t *rdb_add_pool (
         rdb_error ("rDB: Fatal: pool registration without type or matching"
                 " compare fn");
         pool_root = pool->next;
+        if (pool->private_data) rdb_free(pool->private_data);
         rdb_free (pool);
         return NULL;
     }
@@ -518,7 +638,8 @@ rdb_pool_t *rdb_register_um_pool (
         int idxCount, 
         int key_offset, 
         int FLAGS, 
-        void *fn) {
+        void *fn,
+        size_t key_size) {
 
     rdb_pool_t *pool;
 
@@ -529,7 +650,8 @@ rdb_pool_t *rdb_register_um_pool (
         rdb_error ("rDB: Fatal: Duplicte pool name in rdb_register_pool");
         pool = NULL;
     } else {
-        pool = rdb_add_pool (poolName, idxCount, key_offset, FLAGS, fn);
+        pool = rdb_add_pool (poolName, idxCount, key_offset, FLAGS, fn,
+                key_size);
     }
     rdb_sem_unlock(&reg_mutex);
 
@@ -596,7 +718,7 @@ void rdb_print_pools(void *out) {
 
 // Register additional Indexes to an existing data pool
 int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
-        int FLAGS, void *compare_fn) {
+        int FLAGS, void *compare_fn, size_t key_size) {
     if (pool && pool->fault.code) return RDB_ERR_FAULTED;
     rdb_sem_lock(&reg_mutex);
     if (idx == 0) {
@@ -620,10 +742,21 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
         return -4;
     }
 
+    if (!valid_key_size((uint32_t)FLAGS, key_size)) {
+        rdb_sem_unlock(&reg_mutex);
+        return rdb_error_value(-4,
+                "RDB_KSTR indexes require a nonzero key size; other indexes require zero");
+    }
+
     if (-1 == set_pool_fn_pointers(pool, idx, FLAGS, compare_fn)){
         rdb_sem_unlock(&reg_mutex);
         return (rdb_error_value (-4,
             "Index Registration without valid type or compare fn. Ignored"));
+    }
+
+    if (set_key_size(pool, idx, key_size) < 0) {
+        rdb_sem_unlock(&reg_mutex);
+        return RDB_ERR_REINDEX_NOMEM;
     }
 
     pool->root[idx] = NULL;
@@ -632,6 +765,67 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
     debug ("registered index %d for pool %s, Keyoffset is %d\n", idx, pool->name, key_offset);
     rdb_sem_unlock(&reg_mutex);
     return (idx);
+}
+
+int rdb_register_kcf_key_parts(rdb_pool_t *pool, int index,
+        const rdb_kcf_key_part_t *parts, size_t part_count)
+{
+    rdb_pool_private_t *private_data;
+    rdb_kcf_index_t *metadata;
+    rdb_kcf_key_part_t *copy;
+    size_t i;
+
+    if (!valid_pool_index(pool, index) || !parts || !part_count ||
+            !(pool->FLAGS[index] & RDB_KCF))
+        return rdb_error_value(RDB_ERR_REINDEX_INVALID,
+                "KCF key parts require a valid RDB_KCF index and nonempty parts");
+    if (pool->fault.code)
+        return RDB_ERR_FAULTED;
+    if (pool->root[index])
+        return rdb_error_value(RDB_ERR_REINDEX_INVALID,
+                "KCF key parts must be registered before inserting records");
+    if (part_count > (size_t)-1 / sizeof(*copy))
+        return rdb_error_value(RDB_ERR_REINDEX_INVALID,
+                "Too many KCF key components");
+
+    for (i = 0; i < part_count; ++i) {
+        size_t size = reindex_type_size(parts[i].type, parts[i].size);
+        if (!size || (parts[i].type == RDB_KSTR && !parts[i].size) ||
+                (parts[i].type != RDB_KSTR && parts[i].size) ||
+                parts[i].offset > (size_t)-1 - size)
+            return rdb_error_value(RDB_ERR_REINDEX_INVALID,
+                    "Invalid KCF key component description");
+        for (size_t prior = 0; prior < i; ++prior) {
+            size_t prior_size = reindex_type_size(parts[prior].type,
+                    parts[prior].size);
+            size_t part_end = parts[i].offset + size;
+            size_t prior_end = parts[prior].offset + prior_size;
+            if (parts[i].offset < prior_end && parts[prior].offset < part_end)
+                return rdb_error_value(RDB_ERR_REINDEX_INVALID,
+                        "KCF key components may not overlap");
+        }
+    }
+
+    private_data = pool->private_data;
+    if (!private_data) {
+        private_data = rdb_alloc(sizeof(*private_data));
+        if (!private_data)
+            return RDB_ERR_REINDEX_NOMEM;
+        memset(private_data, 0, sizeof(*private_data));
+        pool->private_data = private_data;
+    }
+    metadata = &private_data->index[index];
+    if (metadata->parts)
+        return rdb_error_value(RDB_ERR_REINDEX_INVALID,
+                "KCF key parts are already registered");
+
+    copy = rdb_alloc(sizeof(*copy) * part_count);
+    if (!copy)
+        return RDB_ERR_REINDEX_NOMEM;
+    memcpy(copy, parts, sizeof(*copy) * part_count);
+    metadata->parts = copy;
+    metadata->part_count = part_count;
+    return 0;
 }
 
 // Below is a set of self explanatory compare functions...
@@ -957,6 +1151,7 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
             // we can't print custom functions data so we print the address
             // TODO: Consider adding a print-to-str fn() hook to pool, so we can dump custom-index data
             case RDB_KCF:
+            case RDB_KCFUT:
                 rdb_c_info ("%p%s", key, separator);
                 break;
  /*           case RDB_KTME:
@@ -1348,6 +1543,7 @@ int _rdb_delete (
 enum { DELETE_MISSING = 0, DELETE_REMOVED = 1, DELETE_SHRANK = 2 };
 static int unlink_record(rdb_pool_t *pool, void *record, PP_T *queue_links,
         const char *operation);
+static void reindex_free_record_strings(rdb_pool_t *pool, void *record);
 
 // Return shoud be the # of updated indexes, which must match the number of 
 // defined indexes, anything less shows an error and should be treated as 
@@ -1624,11 +1820,9 @@ int _rdb_iterate (
         void        **resumePtr) {
 
     void   *dataHead;
-    char   **dataField;
     PP_T   *pp, *pr;
     int     rc, rc2 = 0;
     int     rc3 = 0;
-    int     indexCount;
 
     if (pool->FLAGS[index] & RDB_BTREE) {
         set_pointers (pool, index, start, &pp, &dataHead);
@@ -1735,21 +1929,9 @@ int _rdb_iterate (
                 if (unlink_record(pool, dataHead, NULL, "iterate") < 0)
                     return RDBFE_ABORT;
 
+                reindex_free_record_strings(pool, dataHead);
                 if (del_fn) del_fn(dataHead, delfn_data);
-                else { 
-                    // Courtesy delete of data block and dynamic indexes
-                    // We have an index which is a pointer, need to free it too.
-                    for (indexCount = 0; indexCount < pool->indexCount;
-                            indexCount++) if (pool->FLAGS[indexCount] &
-                                                            RDB_KPSTR) { 
-                        dataField = dataHead + pool->key_offset[indexCount];
-                        //debug("off = %d add %x, str %s\n",
-                        // pool->key_offset[indexCount],
-                        // (unsigned) *dataField, *dataField);
-                            if (*dataField) rdb_free(*dataField);
-                    }
-                    if (dataHead) rdb_free (dataHead);
-                }
+                else if (dataHead) rdb_free(dataHead);
 
                 debug ("after delete rc=%d\n", rc);
                 return rc;
@@ -1786,10 +1968,8 @@ int _rdb_iterate_list (
         void        **resumePtr) {
 
     void   *dataHead;
-    char   **dataField;
     PP_T   *pp;
     int     rc, rc2 = 0;
-    int     indexCount;
 
 rfeStart:
 
@@ -1830,21 +2010,9 @@ rfeStart:
             if (unlink_record(pool, dataHead, NULL, "iterate") < 0)
                 return RDBFE_ABORT;
 
+            reindex_free_record_strings(pool, dataHead);
             if (del_fn) del_fn(dataHead, delfn_data);
-            else { 
-                // Courtesy delete of data block and dynamic indexes
-                // We have an index which is a pointer, need to free it too.
-                for (indexCount = 0; indexCount < pool->indexCount;
-                        indexCount++) if (pool->FLAGS[indexCount] &
-                            RDB_KPSTR) { 
-                            dataField = dataHead + pool->key_offset[indexCount];
-                            //debug("off = %d add %x, str %s\n",
-                            // pool->key_offset[indexCount],
-                            // (unsigned) *dataField, *dataField);
-                            if (*dataField) rdb_free(*dataField);
-                        }
-                        if (dataHead) rdb_free (dataHead);
-            }
+            else if (dataHead) rdb_free(dataHead);
 
             return rc;
         }
@@ -1862,14 +2030,15 @@ rfeStart:
  * If fn returns RDB_DB_DELETE_NODE, or if fn is null, the tree node will be 
  * deleted from rDB and del_fn will be called to do it's thing (if not NULL).
  *
- * del_fn is called after node is unlinked from all data pools and it's purpose
- * is to free any allocated memory and any other cleanup needed.
+ * del_fn is called after node is unlinked from all indexes. rDB first frees
+ * every registered KPSTR component and sets its pointer to NULL, then calls
+ * del_fn. The callback should free the record and any other user allocations,
+ * but must not free indexed KPSTR strings.
  *
  * del_fn receive a pointer to the node head, and a potential user  argument
- * del_fn is optional but is highly recommanded. if it is missing (NULL), 
- * rRB will free ptr for you, but it will not know how to free
- * any dynamic allocations tied to it (except PSTR index fields, which is will
- * free), So If there are any, and del_fn is null, memoty leak will occur.
+ * del_fn is optional. If it is NULL, rDB frees the record after freeing its
+ * registered KPSTR index strings. Any other user-owned allocations require a
+ * del_fn.
  */
 
 void rdb_iterate(
@@ -1918,6 +2087,732 @@ void rdb_iterate(
                                                     resumePtr != NULL);
 }
 
+static int reindex_collect_count(rdb_pool_t *pool, int index, void *record,
+        size_t *count)
+{
+    PP_T *links;
+    (void)pool;
+    if (!record) return 0;
+    links = (PP_T *)record + index;
+    if (reindex_collect_count(pool, index, links->left, count) < 0)
+        return -1;
+    if (*count == (size_t)-1) return -1;
+    ++*count;
+    return reindex_collect_count(pool, index, links->right, count);
+}
+
+static void reindex_collect_records(rdb_pool_t *pool, int index, void *record,
+        void **records, size_t *position)
+{
+    PP_T *links;
+    if (!record) return;
+    links = (PP_T *)record + index;
+    reindex_collect_records(pool, index, links->left, records, position);
+    records[(*position)++] = record;
+    reindex_collect_records(pool, index, links->right, records, position);
+}
+
+static rdb_reindex_entry_t *reindex_find_entry(rdb_reindex_ctx_t *ctx,
+        const void *record)
+{
+    rdb_reindex_entry_t *entry;
+    for (entry = ctx->entries; entry; entry = entry->next)
+        if (entry->record == record) return entry;
+    return NULL;
+}
+
+static void reindex_key_clear(rdb_pool_t *pool, int index,
+        rdb_reindex_key_t *key)
+{
+    uint32_t kind = pool->FLAGS[index] & RDB_KEYS;
+    size_t part;
+    rdb_kcf_index_t *metadata;
+    if (!key->bytes) return;
+    if (kind == RDB_KPSTR) {
+        char **value = (char **)key->bytes;
+        if (*value) rdb_free(*value);
+    } else if (kind == RDB_KCF) {
+        metadata = kcf_index_meta(pool, index);
+        if (metadata) for (part = 0; part < metadata->part_count; ++part) {
+            if (metadata->parts[part].type == RDB_KPSTR) {
+                char **value = (char **)(key->bytes + metadata->parts[part].offset);
+                if (*value) rdb_free(*value);
+            }
+        }
+    }
+    rdb_free(key->bytes);
+    key->bytes = NULL;
+    key->size = 0;
+}
+
+static void reindex_entry_free(rdb_pool_t *pool, rdb_reindex_entry_t *entry)
+{
+    int index;
+    for (index = 0; index < pool->indexCount; ++index)
+        reindex_key_clear(pool, index, &entry->keys[index]);
+    rdb_free(entry);
+}
+
+static void reindex_entries_free(rdb_reindex_ctx_t *ctx)
+{
+    rdb_reindex_entry_t *entry = ctx->entries;
+    while (entry) {
+        rdb_reindex_entry_t *next = entry->next;
+        reindex_entry_free(ctx->pool, entry);
+        entry = next;
+    }
+    ctx->entries = NULL;
+    ctx->entries_tail = &ctx->entries;
+}
+
+static rdb_reindex_temp_t *reindex_find_temp(rdb_reindex_ctx_t *ctx,
+        const char *buffer)
+{
+    rdb_reindex_temp_t *temp;
+    for (temp = ctx->temps; temp; temp = temp->next)
+        if (temp->buffer == buffer) return temp;
+    return NULL;
+}
+
+static int reindex_copy_string(rdb_reindex_ctx_t *ctx, const char *source,
+        char **copy)
+{
+    rdb_reindex_temp_t *temp;
+    const char *end;
+    size_t length;
+    if (!source) return RDB_ERR_REINDEX_INVALID;
+    temp = reindex_find_temp(ctx, source);
+    if (temp) {
+        end = memchr(source, 0, temp->capacity);
+        if (!end) return RDB_ERR_REINDEX_INVALID;
+        length = (size_t)(end - source);
+    } else {
+        length = strlen(source);
+    }
+    *copy = rdb_alloc(length + 1);
+    if (!*copy) return RDB_ERR_REINDEX_NOMEM;
+    memcpy(*copy, source, length + 1);
+    return 0;
+}
+
+static int reindex_key_size(rdb_pool_t *pool, int index, size_t *size)
+{
+    uint32_t kind = pool->FLAGS[index] & RDB_KEYS;
+    rdb_kcf_index_t *metadata;
+    size_t part, end, max_end = 0;
+    if (kind == RDB_KCF) {
+        metadata = kcf_index_meta(pool, index);
+        if (!metadata || !metadata->part_count)
+            return RDB_ERR_REINDEX_UNSUPPORTED;
+        for (part = 0; part < metadata->part_count; ++part) {
+            end = metadata->parts[part].offset + reindex_type_size(
+                    metadata->parts[part].type, metadata->parts[part].size);
+            if (end > max_end) max_end = end;
+        }
+        *size = max_end;
+        return 0;
+    }
+    if (kind == RDB_KSTR) {
+        metadata = kcf_index_meta(pool, index);
+        if (!metadata || !metadata->key_size)
+            return RDB_ERR_REINDEX_UNSUPPORTED;
+        *size = metadata->key_size;
+        return 0;
+    }
+    *size = reindex_type_size(kind, 0);
+    return *size ? 0 : RDB_ERR_REINDEX_UNSUPPORTED;
+}
+
+static int reindex_key_copy(rdb_reindex_ctx_t *ctx, int index,
+        const void *record, rdb_reindex_key_t *key)
+{
+    rdb_pool_t *pool = ctx->pool;
+    uint32_t kind = pool->FLAGS[index] & RDB_KEYS;
+    rdb_kcf_index_t *metadata;
+    size_t size, part;
+    int rc;
+    const unsigned char *source = (const unsigned char *)record +
+            pool->key_offset[index];
+
+    rc = reindex_key_size(pool, index, &size);
+    if (rc < 0) return rc;
+    key->bytes = rdb_alloc(size);
+    if (!key->bytes) return RDB_ERR_REINDEX_NOMEM;
+    key->size = size;
+    memcpy(key->bytes, source, size);
+
+    if (kind == RDB_KSTR) {
+        if (!memchr(source, 0, size)) {
+            reindex_key_clear(pool, index, key);
+            return RDB_ERR_REINDEX_INVALID;
+        }
+    } else if (kind == RDB_KPSTR) {
+        char **value = (char **)source;
+        char **copy = (char **)key->bytes;
+        char *source_string = *value;
+        *copy = NULL;
+        rc = reindex_copy_string(ctx, source_string, copy);
+        if (rc < 0) {
+            reindex_key_clear(pool, index, key);
+            return rc;
+        }
+    } else if (kind == RDB_KCF) {
+        metadata = kcf_index_meta(pool, index);
+        for (part = 0; part < metadata->part_count; ++part)
+            if (metadata->parts[part].type == RDB_KPSTR)
+                *(char **)(key->bytes + metadata->parts[part].offset) = NULL;
+        for (part = 0; part < metadata->part_count; ++part) {
+            const rdb_kcf_key_part_t *component = &metadata->parts[part];
+            if (component->type == RDB_KPSTR) {
+                char **copy = (char **)(key->bytes + component->offset);
+                char *source_string = *(char **)(source + component->offset);
+                rc = reindex_copy_string(ctx, source_string, copy);
+                if (rc < 0) {
+                    reindex_key_clear(pool, index, key);
+                    return rc;
+                }
+            } else if (component->type == RDB_KSTR &&
+                    !memchr(source + component->offset, 0, component->size)) {
+                reindex_key_clear(pool, index, key);
+                return RDB_ERR_REINDEX_INVALID;
+            }
+        }
+    }
+    return 0;
+}
+
+static int reindex_compare_key(rdb_pool_t *pool, int index,
+        const void *left, const void *right)
+{
+    return pool->fn[index]((void *)left, (void *)right);
+}
+
+static int reindex_check_conflict(rdb_reindex_ctx_t *ctx, int index,
+        void *record, const rdb_reindex_key_t *key)
+{
+    rdb_pool_t *pool = ctx->pool;
+    void *node = pool->root[index];
+    rdb_reindex_entry_t *owner, *pending;
+    while (node) {
+        int compare = reindex_compare_key(pool, index,
+                (unsigned char *)node + pool->key_offset[index], key->bytes);
+        if (!compare) break;
+        if (compare < 0)
+            node = ((PP_T *)node + index)->left;
+        else
+            node = ((PP_T *)node + index)->right;
+    }
+    if (node && node != record) {
+        owner = reindex_find_entry(ctx, node);
+        if (!owner || !(owner->indexes & RDB_INDEX_MASK(index)) ||
+                reindex_compare_key(pool, index,
+                    owner->keys[index].bytes, key->bytes) == 0)
+            return RDB_ERR_REINDEX_CONFLICT;
+    }
+    for (pending = ctx->entries; pending; pending = pending->next) {
+        if (pending->record != record &&
+                (pending->indexes & RDB_INDEX_MASK(index)) &&
+                reindex_compare_key(pool, index,
+                    pending->keys[index].bytes, key->bytes) == 0)
+            return RDB_ERR_REINDEX_CONFLICT;
+    }
+    return 0;
+}
+
+static int reindex_set_error(rdb_reindex_ctx_t *ctx, int error,
+        const char *message)
+{
+    if (ctx && !ctx->error) {
+        ctx->error = error;
+        rdb_error_value(error, (char *)message);
+    }
+    return error;
+}
+
+int rdb_reindex_check_apply(rdb_reindex_ctx_t *ctx, void *record,
+        const void *candidate_record, rdb_index_mask_t changed_indexes)
+{
+    rdb_reindex_key_t keys[RDB_POOL_MAX_IDX] = {{0}};
+    rdb_reindex_entry_t *entry;
+    rdb_index_mask_t valid_mask;
+    int index, rc;
+
+    if (!ctx || !record || !candidate_record || record != ctx->record)
+        return reindex_set_error(ctx, RDB_ERR_REINDEX_INVALID,
+                "Reindex validation requires the active record and candidate");
+    if (ctx->error) return ctx->error;
+    valid_mask = (1U << ctx->pool->indexCount) - 1U;
+    if (changed_indexes & ~valid_mask)
+        return reindex_set_error(ctx, RDB_ERR_REINDEX_INVALID,
+                "Reindex mask contains an index outside the pool");
+
+    for (index = 0; index < ctx->pool->indexCount; ++index) {
+        uint32_t kind = ctx->pool->FLAGS[index] & RDB_KEYS;
+        if (kind == RDB_KCFUT) {
+            if (changed_indexes & RDB_INDEX_MASK(index)) {
+                for (int cleanup = 0; cleanup < ctx->pool->indexCount; ++cleanup)
+                    reindex_key_clear(ctx->pool, cleanup, &keys[cleanup]);
+                return reindex_set_error(ctx, RDB_ERR_REINDEX_UNSUPPORTED,
+                        "RDB_KCFUT indexes cannot be reindexed");
+            }
+            continue;
+        }
+        if (ctx->pool->FLAGS[index] & RDB_NOKEYS) {
+            if (changed_indexes & RDB_INDEX_MASK(index)) {
+                for (int cleanup = 0; cleanup < ctx->pool->indexCount; ++cleanup)
+                    reindex_key_clear(ctx->pool, cleanup, &keys[cleanup]);
+                return reindex_set_error(ctx, RDB_ERR_REINDEX_UNSUPPORTED,
+                        "FIFO/LIFO indexes cannot be reindexed");
+            }
+            continue;
+        }
+        rc = reindex_key_copy(ctx, index, candidate_record, &keys[index]);
+        if (rc < 0) {
+            for (int cleanup = 0; cleanup < ctx->pool->indexCount; ++cleanup)
+                reindex_key_clear(ctx->pool, cleanup, &keys[cleanup]);
+            return reindex_set_error(ctx, rc,
+                    "Candidate uses an unsupported or invalid index key");
+        }
+        if (!(changed_indexes & RDB_INDEX_MASK(index))) {
+            const void *old_key = (const unsigned char *)record +
+                    ctx->pool->key_offset[index];
+            int changed = reindex_compare_key(ctx->pool, index, old_key,
+                    keys[index].bytes) != 0;
+            reindex_key_clear(ctx->pool, index, &keys[index]);
+            if (changed) {
+                for (int cleanup = 0; cleanup < ctx->pool->indexCount; ++cleanup)
+                    reindex_key_clear(ctx->pool, cleanup, &keys[cleanup]);
+                return reindex_set_error(ctx, RDB_ERR_REINDEX_UNMARKED,
+                        "Candidate changed an index omitted from the reindex mask");
+            }
+            continue;
+        }
+    }
+
+    for (index = 0; index < ctx->pool->indexCount; ++index) {
+        if (!(changed_indexes & RDB_INDEX_MASK(index))) continue;
+        rc = reindex_check_conflict(ctx, index, record, &keys[index]);
+        if (rc < 0) {
+            for (int cleanup = 0; cleanup < ctx->pool->indexCount; ++cleanup)
+                reindex_key_clear(ctx->pool, cleanup, &keys[cleanup]);
+            return reindex_set_error(ctx, rc,
+                    "Reindex candidate conflicts with an occupied or reserved key");
+        }
+    }
+
+    entry = reindex_find_entry(ctx, record);
+    if (!entry) {
+        entry = rdb_alloc(sizeof(*entry));
+        if (!entry) {
+            for (index = 0; index < ctx->pool->indexCount; ++index)
+                reindex_key_clear(ctx->pool, index, &keys[index]);
+            return reindex_set_error(ctx, RDB_ERR_REINDEX_NOMEM,
+                    "Unable to retain reindex candidate");
+        }
+        memset(entry, 0, sizeof(*entry));
+        entry->record = record;
+        *ctx->entries_tail = entry;
+        ctx->entries_tail = &entry->next;
+    }
+    for (index = 0; index < ctx->pool->indexCount; ++index) {
+        if (!(changed_indexes & RDB_INDEX_MASK(index))) continue;
+        reindex_key_clear(ctx->pool, index, &entry->keys[index]);
+        entry->keys[index] = keys[index];
+        keys[index].bytes = NULL;
+        entry->indexes |= RDB_INDEX_MASK(index);
+    }
+    return 0;
+}
+
+int rdb_reindex_kpstr_edit(rdb_reindex_ctx_t *ctx, void *record,
+        void *candidate_record, int index, size_t part_offset,
+        size_t capacity, char **edit_buffer)
+{
+    uint32_t kind;
+    char **field;
+    char *buffer, *source;
+    rdb_reindex_temp_t *temp;
+    rdb_kcf_index_t *metadata;
+    size_t part;
+    int allowed = 0;
+
+    if (!ctx || !record || !candidate_record || !edit_buffer ||
+            record != ctx->record || !valid_pool_index(ctx->pool, index) ||
+            !capacity)
+        return reindex_set_error(ctx, RDB_ERR_REINDEX_INVALID,
+                "Invalid KPSTR edit request");
+    if (ctx->error) return ctx->error;
+    kind = ctx->pool->FLAGS[index] & RDB_KEYS;
+    if (kind == RDB_KPSTR && part_offset == 0)
+        allowed = 1;
+    else if (kind == RDB_KCF) {
+        metadata = kcf_index_meta(ctx->pool, index);
+        if (metadata) for (part = 0; part < metadata->part_count; ++part)
+            if (metadata->parts[part].type == RDB_KPSTR &&
+                    metadata->parts[part].offset == part_offset)
+                allowed = 1;
+    }
+    if (!allowed)
+        return reindex_set_error(ctx, RDB_ERR_REINDEX_UNSUPPORTED,
+                "KPSTR edit must name a registered KPSTR index component");
+
+    field = (char **)((unsigned char *)candidate_record +
+            ctx->pool->key_offset[index] + part_offset);
+    source = *field;
+    if (source) {
+        temp = reindex_find_temp(ctx, source);
+        if (temp) {
+            const char *end = memchr(source, 0, temp->capacity);
+            if (!end)
+                return reindex_set_error(ctx, RDB_ERR_REINDEX_INVALID,
+                        "KPSTR edit buffer is not terminated within its capacity");
+            if ((size_t)(end - source) + 1 > capacity)
+                return reindex_set_error(ctx, RDB_ERR_REINDEX_INVALID,
+                        "KPSTR edit capacity does not fit the existing string");
+        } else if (strlen(source) + 1 > capacity) {
+            return reindex_set_error(ctx, RDB_ERR_REINDEX_INVALID,
+                    "KPSTR edit capacity does not fit the existing string");
+        }
+    }
+    if (!source)
+        return reindex_set_error(ctx, RDB_ERR_REINDEX_INVALID,
+                "KPSTR edit requires a non-NULL source string");
+    buffer = rdb_alloc(capacity);
+    temp = rdb_alloc(sizeof(*temp));
+    if (!buffer || !temp) {
+        if (buffer) rdb_free(buffer);
+        if (temp) rdb_free(temp);
+        return reindex_set_error(ctx, RDB_ERR_REINDEX_NOMEM,
+                "Unable to allocate KPSTR edit buffer");
+    }
+    memcpy(buffer, source, strlen(source) + 1);
+    temp->buffer = buffer;
+    temp->capacity = capacity;
+    temp->next = ctx->temps;
+    ctx->temps = temp;
+    *field = buffer;
+    *edit_buffer = buffer;
+    return 0;
+}
+
+static void reindex_temps_free(rdb_reindex_ctx_t *ctx)
+{
+    rdb_reindex_temp_t *temp = ctx->temps;
+    while (temp) {
+        rdb_reindex_temp_t *next = temp->next;
+        rdb_free(temp->buffer);
+        rdb_free(temp);
+        temp = next;
+    }
+    ctx->temps = NULL;
+}
+
+static int reindex_apply_key(rdb_pool_t *pool, int index, void *record,
+        rdb_reindex_key_t *key, char **old_strings, size_t *old_count)
+{
+    uint32_t kind = pool->FLAGS[index] & RDB_KEYS;
+    unsigned char *destination = (unsigned char *)record +
+            pool->key_offset[index];
+    rdb_kcf_index_t *metadata;
+    size_t part;
+    if (kind == RDB_KPSTR) {
+        char **old_value = (char **)destination;
+        char **new_value = (char **)key->bytes;
+        old_strings[(*old_count)++] = *old_value;
+        *old_value = *new_value;
+        *new_value = NULL;
+        return 0;
+    }
+    if (kind != RDB_KCF) {
+        memcpy(destination, key->bytes, key->size);
+        return 0;
+    }
+    metadata = kcf_index_meta(pool, index);
+    for (part = 0; part < metadata->part_count; ++part) {
+        const rdb_kcf_key_part_t *component = &metadata->parts[part];
+        size_t size = reindex_type_size(component->type, component->size);
+        unsigned char *to = destination + component->offset;
+        unsigned char *from = key->bytes + component->offset;
+        if (component->type == RDB_KPSTR) {
+            char **old_value = (char **)to;
+            char **new_value = (char **)from;
+            old_strings[(*old_count)++] = *old_value;
+            *old_value = *new_value;
+            *new_value = NULL;
+        } else {
+            memcpy(to, from, size);
+        }
+    }
+    return 0;
+}
+
+static void reindex_old_strings_free(char **strings, size_t count)
+{
+    size_t i, prior;
+    for (i = 0; i < count; ++i) {
+        if (!strings[i]) continue;
+        for (prior = 0; prior < i; ++prior)
+            if (strings[prior] == strings[i]) break;
+        if (prior == i) rdb_free(strings[i]);
+    }
+}
+
+static int reindex_flush(rdb_reindex_ctx_t *ctx)
+{
+    rdb_pool_t *pool = ctx->pool;
+    rdb_reindex_entry_t *entry;
+    size_t old_capacity = 0, old_count = 0, i;
+    char **old_strings;
+    int index, failed_index = -1;
+
+    for (entry = ctx->entries; entry; entry = entry->next) {
+        for (index = 0; index < pool->indexCount; ++index) {
+            rdb_kcf_index_t *metadata;
+            if (!(entry->indexes & RDB_INDEX_MASK(index))) continue;
+            if ((pool->FLAGS[index] & RDB_KEYS) == RDB_KPSTR)
+                ++old_capacity;
+            else if ((pool->FLAGS[index] & RDB_KEYS) == RDB_KCF) {
+                metadata = kcf_index_meta(pool, index);
+                if (metadata) for (i = 0; i < metadata->part_count; ++i)
+                    if (metadata->parts[i].type == RDB_KPSTR)
+                        ++old_capacity;
+            }
+        }
+    }
+    old_strings = NULL;
+    if (old_capacity)
+        old_strings = rdb_alloc(sizeof(*old_strings) * old_capacity);
+    if (old_capacity && !old_strings) {
+        reindex_entries_free(ctx);
+        return RDB_ERR_REINDEX_NOMEM;
+    }
+
+    // Remove every affected old key before changing any live record.
+    for (entry = ctx->entries; entry; entry = entry->next) {
+        for (index = 0; index < pool->indexCount; ++index) {
+            if (!(entry->indexes & RDB_INDEX_MASK(index))) continue;
+            if (_rdb_delete(pool, index, entry->record, NULL, NULL, 0) <= DELETE_MISSING) {
+                failed_index = index;
+                goto fault;
+            }
+        }
+    }
+
+    // Apply staged values while all affected index links are detached.
+    for (entry = ctx->entries; entry; entry = entry->next)
+        for (index = 0; index < pool->indexCount; ++index)
+            if (entry->indexes & RDB_INDEX_MASK(index))
+                reindex_apply_key(pool, index, entry->record,
+                        &entry->keys[index], old_strings, &old_count);
+
+    // Reinsert only after every staged value has been installed.
+    for (entry = ctx->entries; entry; entry = entry->next) {
+        for (index = 0; index < pool->indexCount; ++index) {
+            if (!(entry->indexes & RDB_INDEX_MASK(index))) continue;
+            if (_rdb_insert(pool, entry->record, pool->root[index], index,
+                        NULL, 0) < 0) {
+                failed_index = index;
+                goto fault;
+            }
+        }
+    }
+    reindex_old_strings_free(old_strings, old_count);
+    if (old_strings) rdb_free(old_strings);
+    reindex_entries_free(ctx);
+    return 0;
+
+fault:
+    {
+        void *fault_record = entry ? entry->record : NULL;
+        reindex_old_strings_free(old_strings, old_count);
+        if (old_strings) rdb_free(old_strings);
+        reindex_entries_free(ctx);
+        return fault_pool(pool, failed_index, fault_record,
+                "reindex apply", "staged index update could not be applied");
+    }
+}
+
+static int reindex_string_seen_before(rdb_pool_t *pool, void *record,
+        int current_index, size_t current_part, char *value)
+{
+    int index;
+    size_t part;
+    for (index = 0; index <= current_index; ++index) {
+        uint32_t kind = pool->FLAGS[index] & RDB_KEYS;
+        if (kind == RDB_KPSTR) {
+            char *prior = *(char **)((unsigned char *)record +
+                    pool->key_offset[index]);
+            if (index < current_index && prior == value) return 1;
+        } else if (kind == RDB_KCF) {
+            rdb_kcf_index_t *metadata = kcf_index_meta(pool, index);
+            if (!metadata) continue;
+            for (part = 0; part < metadata->part_count; ++part) {
+                char *prior;
+                if (index == current_index && part >= current_part) break;
+                if (metadata->parts[part].type != RDB_KPSTR) continue;
+                prior = *(char **)((unsigned char *)record +
+                        pool->key_offset[index] + metadata->parts[part].offset);
+                if (prior == value) return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static void reindex_free_record_strings(rdb_pool_t *pool, void *record)
+{
+    int index;
+    size_t part;
+    for (index = 0; index < pool->indexCount; ++index) {
+        uint32_t kind = pool->FLAGS[index] & RDB_KEYS;
+        if (kind == RDB_KPSTR) {
+            char **field = (char **)((unsigned char *)record +
+                    pool->key_offset[index]);
+            if (*field) {
+                if (!reindex_string_seen_before(pool, record, index, 0, *field))
+                    rdb_free(*field);
+            }
+        } else if (kind == RDB_KCF) {
+            rdb_kcf_index_t *metadata = kcf_index_meta(pool, index);
+            if (metadata) for (part = 0; part < metadata->part_count; ++part) {
+                if (metadata->parts[part].type == RDB_KPSTR) {
+                    char **field = (char **)((unsigned char *)record +
+                            pool->key_offset[index] + metadata->parts[part].offset);
+                    if (*field) {
+                        if (!reindex_string_seen_before(pool, record, index,
+                                    part, *field))
+                            rdb_free(*field);
+                    }
+                }
+            }
+        }
+    }
+    for (index = 0; index < pool->indexCount; ++index) {
+        uint32_t kind = pool->FLAGS[index] & RDB_KEYS;
+        if (kind == RDB_KPSTR) {
+            char **field = (char **)((unsigned char *)record +
+                    pool->key_offset[index]);
+            *field = NULL;
+        } else if (kind == RDB_KCF) {
+            rdb_kcf_index_t *metadata = kcf_index_meta(pool, index);
+            if (metadata) for (part = 0; part < metadata->part_count; ++part)
+                if (metadata->parts[part].type == RDB_KPSTR) {
+                    char **field = (char **)((unsigned char *)record +
+                            pool->key_offset[index] + metadata->parts[part].offset);
+                    *field = NULL;
+                }
+        }
+    }
+}
+
+static int reindex_delete_record(rdb_reindex_ctx_t *ctx, void *record,
+        void (*del_fn)(void *, void *), void *del_data)
+{
+    if (unlink_record(ctx->pool, record, NULL, "iterate reindex") < 0)
+        return RDB_ERR_FAULTED;
+    reindex_free_record_strings(ctx->pool, record);
+    if (del_fn) del_fn(record, del_data);
+    else rdb_free(record);
+    return 0;
+}
+
+int rdb_iterate_reindex(rdb_pool_t *pool, int index,
+        rdb_iterate_reindex_fn fn, void *fn_data,
+        void del_fn(void *, void *), void *del_data)
+{
+    rdb_reindex_ctx_t ctx;
+    void **records;
+    size_t count = 0, position = 0, i;
+    int rc = 0;
+
+    if (!pool || !valid_pool_index(pool, index) || !fn)
+        return rdb_error_value(RDB_ERR_REINDEX_INVALID,
+                "rdb_iterate_reindex requires a pool, valid index and callback");
+    if (!pool->indexCount || pool->indexCount > RDB_POOL_MAX_IDX)
+        return rdb_error_value(RDB_ERR_REINDEX_INVALID,
+                "rdb_iterate_reindex requires a valid index count");
+    if (pool->fault.code) return RDB_ERR_FAULTED;
+    if (!(pool->FLAGS[index] & RDB_BTREE))
+        return rdb_error_value(RDB_ERR_REINDEX_UNSUPPORTED,
+                "rdb_iterate_reindex requires an RDB_BTREE index");
+    if (pool->FLAGS[index] & RDB_NOKEYS)
+        return rdb_error_value(RDB_ERR_REINDEX_UNSUPPORTED,
+                "rdb_iterate_reindex requires a keyed traversal index");
+    for (i = 0; i < pool->indexCount; ++i) {
+        if (!pool->FLAGS[i])
+            return rdb_error_value(RDB_ERR_REINDEX_INVALID,
+                    "rdb_iterate_reindex requires all pool indexes to be registered");
+        if ((pool->FLAGS[i] & RDB_KEYS) == RDB_KCFUT &&
+                !(rdb_init_flags & RDB_INIT_ALLOW_KCFUT))
+            return rdb_error_value(RDB_ERR_REINDEX_UNSUPPORTED,
+                    "rdb_iterate_reindex rejects pools with RDB_KCFUT by default");
+        if ((pool->FLAGS[i] & RDB_KEYS) == RDB_KCF) {
+            rdb_kcf_index_t *metadata = kcf_index_meta(pool, i);
+            if (!metadata || !metadata->part_count)
+                return rdb_error_value(RDB_ERR_REINDEX_UNSUPPORTED,
+                        "rdb_iterate_reindex requires registered RDB_KCF key parts");
+        }
+    }
+    if (reindex_collect_count(pool, index, pool->root[index], &count) < 0 ||
+            count > (size_t)-1 / sizeof(*records))
+        return RDB_ERR_REINDEX_NOMEM;
+    if (!count) return 0;
+    records = rdb_alloc(count * sizeof(*records));
+    if (!records) return RDB_ERR_REINDEX_NOMEM;
+    reindex_collect_records(pool, index, pool->root[index], records, &position);
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pool = pool;
+    ctx.entries_tail = &ctx.entries;
+    for (i = 0; i < count; ++i) {
+        int callback_result;
+        if (pool->fault.code) {
+            rc = RDB_ERR_FAULTED;
+            break;
+        }
+        ctx.record = records[i];
+        ctx.error = 0;
+        callback_result = fn(records[i], fn_data, &ctx);
+        reindex_temps_free(&ctx);
+        if (ctx.error) {
+            rc = ctx.error;
+            break;
+        }
+        if (callback_result == RDB_CB_DELETE_NODE ||
+                callback_result == RDB_CB_DELETE_NODE_AND_ABORT) {
+            rdb_reindex_entry_t *entry = reindex_find_entry(&ctx, records[i]);
+            if (entry) {
+                rdb_reindex_entry_t **link = &ctx.entries;
+                while (*link != entry) link = &(*link)->next;
+                *link = entry->next;
+                if (!*link) ctx.entries_tail = link;
+                reindex_entry_free(pool, entry);
+            }
+            if (reindex_delete_record(&ctx, records[i], del_fn, del_data) < 0) {
+                rc = RDB_ERR_FAULTED;
+                break;
+            }
+            if (callback_result == RDB_CB_DELETE_NODE_AND_ABORT) {
+                rc = RDB_ITERATE_ABORTED;
+                break;
+            }
+        } else if (callback_result != RDB_CB_OK) {
+            rc = RDB_ITERATE_ABORTED;
+            break;
+        }
+    }
+    if (!pool->fault.code) {
+        int apply_rc = reindex_flush(&ctx);
+        if (apply_rc < 0) rc = apply_rc;
+    } else {
+        reindex_entries_free(&ctx);
+        rc = RDB_ERR_FAULTED;
+    }
+    reindex_temps_free(&ctx);
+    rdb_free(records);
+    return rc;
+}
+
 void _rdb_flush( 
         rdb_pool_t  *pool, 
         void        *start, 
@@ -1926,8 +2821,6 @@ void _rdb_flush(
 
     void   *dataHead;
     PP_T   *pp;
-    void   **dataField;
-    int     indexCount;
 
     if (pool->FLAGS[0] & RDB_BTREE) {
         set_pointers( pool, 0, start, &pp, &dataHead);
@@ -1938,22 +2831,9 @@ void _rdb_flush(
         if (pp->right != NULL)
             _rdb_flush( pool, pp->right, fn, fn_data );
 
+        reindex_free_record_strings(pool, dataHead);
         if (NULL != fn) fn(dataHead, fn_data);
-        else { 
-            // Courtesy delete of data block
-
-            for (indexCount = 0; indexCount < pool->indexCount;
-                    indexCount++) if (pool->FLAGS[indexCount] &
-                                                        RDB_KPSTR) { 
-                // We have an index which is a pointer, need to free it too.
-                dataField = dataHead + pool->key_offset[indexCount];
-                //debug("off = %d add %x, str %s\n",
-                //pool->key_offset[indexCount],(unsigned) *dataField,
-                //*dataField);
-                if (*dataField) rdb_free(*dataField);
-                }
-            if (dataHead) rdb_free (dataHead);
-        }
+        else if (dataHead) rdb_free(dataHead);
     }
 }
 
@@ -1965,8 +2845,6 @@ void _rdb_flush_list(
 
     void   *dataHead;
     PP_T   *pp;
-    void   **dataField;
-    int     indexCount;
 
     if (pool->FLAGS[0] & RDB_BTREE)
         do {
@@ -1974,22 +2852,9 @@ void _rdb_flush_list(
 
             start = pp->right;
 
+            reindex_free_record_strings(pool, dataHead);
             if (NULL != fn) fn(dataHead, fn_data);
-            else { 
-                // Courtesy delete of data block
-
-                for (indexCount = 0; indexCount < pool->indexCount;
-                        indexCount++) if (pool->FLAGS[indexCount] &
-                                                        RDB_KPSTR) { 
-                    // We have an index which is a pointer, need to free it too.
-                    dataField = dataHead + pool->key_offset[indexCount];
-                    // debug("off = %d add %x, str %s\n",
-                    // pool->key_offset[indexCount],
-                    // (unsigned) *dataField, *dataField);
-                        if (*dataField) rdb_free(*dataField);
-                    }
-                if (dataHead) rdb_free (dataHead);
-            }
+            else if (dataHead) rdb_free(dataHead);
         }
         while (start != NULL);
 }
@@ -2002,10 +2867,9 @@ void _rdb_flush_list(
  * This fn should free the allocated memory (ptr), and any additionali
  * dynamic allocations tied to it.
  *
- * fn() is optional but is highly recommanded. if it is missing (NULL), 
- * rdb will free ptr for you, but it will not know how to free any dynamic 
- * allocations tied to it, so If there is any, and fn is null, 
- * memoty leak will occur.
+ * fn() is optional. rDB always frees registered KPSTR index strings before
+ * calling fn. If fn is NULL, rDB also frees each record; any other user-owned
+ * allocations require a callback.
  */
 void rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data)
 {
@@ -2631,6 +3495,11 @@ static void __exit fini (void)
 
 EXPORT_SYMBOL (rdb_register_um_pool);
 EXPORT_SYMBOL (rdb_register_um_idx);
+EXPORT_SYMBOL (rdb_init_ex);
+EXPORT_SYMBOL (rdb_iterate_reindex);
+EXPORT_SYMBOL (rdb_reindex_check_apply);
+EXPORT_SYMBOL (rdb_reindex_kpstr_edit);
+EXPORT_SYMBOL (rdb_register_kcf_key_parts);
 EXPORT_SYMBOL (rdb_dump);
 EXPORT_SYMBOL (rdb_insert);
 EXPORT_SYMBOL (rdb_get);

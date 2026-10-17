@@ -62,6 +62,59 @@ operation, and reason. Lookups return `NULL`, and iteration, dump, and flush do
 no work on a faulted pool. Drop the pool after inspecting or recovering its
 records; the drop operation releases pool metadata but does not free records.
 
+`rdb_iterate_reindex()` is an opt-in iterator for changing keys while walking a
+tree. Its callback makes a shallow copy of the record, edits that copy, then
+calls `rdb_reindex_check_apply()` with a bit for every changed index. rDB checks
+the proposal against keys currently in use and already reserved by earlier
+callbacks, retains accepted key values, and applies the accepted batch after
+callbacks finish. A conflict or invalid proposal aborts iteration and returns
+an error; the rejected proposal does not change the live record. Earlier
+accepted proposals are still applied. Key swaps are not supported, but an
+earlier proposal may vacate a key for a later record to use.
+
+For example, a callback can change an integer key and stage an edit to a
+pointer-to-string key like this:
+
+```c
+typedef struct {
+    rdb_bpp_t links[2];
+    int32_t id;
+    char *name;
+} user_record_t;
+
+int rename_record(void *data, void *unused, rdb_reindex_ctx_t *ctx)
+{
+    user_record_t *record = data;
+    user_record_t candidate = *record;
+    char *new_name;
+    (void)unused;
+
+    candidate.id = 42;
+    if (rdb_reindex_kpstr_edit(ctx, record, &candidate, 1, 0,
+                64, &new_name) < 0)
+        return RDB_CB_ABORT;
+    strcpy(new_name, "new name");
+
+    if (rdb_reindex_check_apply(ctx, record, &candidate,
+                RDB_INDEX_MASK(0) | RDB_INDEX_MASK(1)) < 0)
+        return RDB_CB_ABORT;
+    return RDB_CB_OK;
+}
+```
+
+The edit buffer and accepted key copies are owned by rDB. For inline
+`RDB_KSTR`, provide the field capacity as the final argument to pool/index
+registration. For `RDB_KCF`, register the scalar, pointer, and string fields
+read by the comparator with `rdb_register_kcf_key_parts()` before inserting
+records; inline `RDB_KSTR` components include their capacity. `RDB_KCFUT`
+indices use arbitrary comparators and cannot be reindexed. `rdb_init()` rejects
+reindex iteration on any pool containing them; `rdb_init_ex(RDB_INIT_ALLOW_KCFUT)`
+allows traversal when those indexes remain unchanged.
+
+rDB owns registered `RDB_KPSTR` index strings. It frees and clears them when
+records are deleted by iteration or `rdb_flush()`, before invoking a supplied
+delete callback.
+
 
 Quick Start - un-managed (um) data pools (Please see demo / doc folders for a more in-depth knowledge)
 
@@ -92,16 +145,17 @@ my_pool = rdb_register_um_pool(
 	RDB_KSTR |		// Key is a string
 	RDB_KASC | 		// Acending sort order
 	RDB_BTREE,		// store this index as a balanced binary tree
-	NULL); 			// we need no custom compare fn as RDB knows 
-					// how to compare strings
+	NULL,
+	sizeof(ud_tmp.name)); // inline RDB_KSTR capacity; no custom comparator needed
 
-rdb_register_um_index(
+rdb_register_um_idx(
 	my_pool, 		// returned from the register pool call - the pool handle
 	1,				// the index we are defining (zero based. index zero was 
 					// defined in the register pool call.
 	&ud_tmp.ssn - &ud_tmp.name, // the byte offset of the index
 	RDB_KSTR,		// Key is a string
-	NULL);
+	NULL,
+	sizeof(ud_tmp.ssn)); // inline RDB_KSTR capacity
 
 
 4. allocate and store some data

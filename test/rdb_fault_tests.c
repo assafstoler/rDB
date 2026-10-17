@@ -61,7 +61,7 @@ static rdb_pool_t *make_tree_pool(char *name, int indexes,
     int offset = (int)offsetof(record_t, key[0]) -
             (int)(sizeof(rdb_bpp_t) * indexes);
     rdb_pool_t *pool = rdb_register_um_pool(name, indexes, offset,
-            RDB_BTREE | RDB_KCF, (void *)(first_compare ? first_compare : compare_int32));
+            RDB_BTREE | RDB_KCF, (void *)(first_compare ? first_compare : compare_int32), 0);
     CHECK(pool != NULL);
     if (!pool)
         return NULL;
@@ -72,7 +72,7 @@ static rdb_pool_t *make_tree_pool(char *name, int indexes,
         void *compare = (void *)(index == 1 && second_compare
                 ? second_compare : compare_int32);
         CHECK(rdb_register_um_idx(pool, index, key_offset,
-                    RDB_BTREE | RDB_KCF, compare) == index);
+                    RDB_BTREE | RDB_KCF, compare, 0) == index);
     }
     return pool;
 }
@@ -82,11 +82,11 @@ static rdb_pool_t *make_queue_pool(char *name)
     int offset = (int)offsetof(record_t, key[0]) -
             (int)(sizeof(rdb_bpp_t) * 2);
     rdb_pool_t *pool = rdb_register_um_pool(name, 2, offset,
-            RDB_BTREE | RDB_KINT32, NULL);
+            RDB_BTREE | RDB_KINT32, NULL, 0);
     CHECK(pool != NULL);
     if (pool)
         CHECK(rdb_register_um_idx(pool, 1, 0,
-                    RDB_BTREE | RDB_KFIFO, NULL) == 1);
+                    RDB_BTREE | RDB_KFIFO, NULL, 0) == 1);
     return pool;
 }
 
@@ -146,7 +146,7 @@ static void test_unexpected_two_child_unlink(void)
     CHECK(rdb_insert(pool, candidate) == RDB_ERR_FAULTED);
     CHECK(rdb_insert_one(pool, 0, candidate) == RDB_ERR_FAULTED);
     CHECK(rdb_delete_one(pool, 0, records[1]) == RDB_ERR_FAULTED);
-    CHECK(rdb_register_um_idx(pool, 0, 0, RDB_BTREE | RDB_KINT32, NULL) == RDB_ERR_FAULTED);
+    CHECK(rdb_register_um_idx(pool, 0, 0, RDB_BTREE | RDB_KINT32, NULL, 0) == RDB_ERR_FAULTED);
     CHECK(rdb_get(pool, 0, &records[0]->key[0]) == NULL);
     CHECK(rdb_get_const(pool, 0, 20) == NULL);
     void *before = records[0], *after = records[1];
@@ -208,11 +208,11 @@ static void test_inconsistent_queue_links(void)
     int offset = (int)offsetof(record_t, key[0]) -
             (int)(sizeof(rdb_bpp_t) * count);
     rdb_pool_t *pool = rdb_register_um_pool("fault-queue-links", count, offset,
-            RDB_BTREE | RDB_KINT32, NULL);
+            RDB_BTREE | RDB_KINT32, NULL, 0);
     CHECK(pool != NULL);
     if (!pool)
         return;
-    CHECK(rdb_register_um_idx(pool, 1, 0, RDB_BTREE | RDB_KFIFO, NULL) == 1);
+    CHECK(rdb_register_um_idx(pool, 1, 0, RDB_BTREE | RDB_KFIFO, NULL, 0) == 1);
     record_t *records[] = {
         new_record(20, 0), new_record(10, 0), new_record(30, 0)
     };
