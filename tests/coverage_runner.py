@@ -121,8 +121,17 @@ def run_coverage(args):
         result["compile_commands_sha256"] = hashlib.sha256((build / "compile_commands.json").read_bytes()).hexdigest()
         compiler_version = capture([args.compiler, "-dumpfullversion", "-dumpversion"])
         gcov_version = capture([args.gcov, "--version"]).splitlines()[0]
+        # Exercise this build's instrumented DSOs, even if an older installed
+        # copy is present in the caller's library path. Keep dependency paths.
+        env = dict(os.environ, GCOV_PREFIX=str(counters), GCOV_PREFIX_STRIP="0",
+                   NO_COLOR="1")
+        library_dirs = list(dict.fromkeys(args.library_dir))
+        if env.get("LD_LIBRARY_PATH"):
+            library_dirs.append(env["LD_LIBRARY_PATH"])
+        if library_dirs:
+            env["LD_LIBRARY_PATH"] = ":".join(library_dirs)
         result.update(compiler=compiler_version, gcov=gcov_version, gcovr="8.6",
-                      library_path=os.environ.get("LD_LIBRARY_PATH", ""))
+                      library_path=env.get("LD_LIBRARY_PATH", ""))
         match = re.search(r"(\d+)\.\d+", gcov_version)
         if not match or match.group(1) != compiler_version.split(".")[0]:
             raise RuntimeError("gcov/compiler version mismatch: " + gcov_version + " / " + compiler_version)
@@ -134,8 +143,6 @@ def run_coverage(args):
                 name, value = line.split("=", 1)
                 result["configuration"][name.split(":")[0]] = value
         objects = prepare_notes(build, counters)
-        env = dict(os.environ, GCOV_PREFIX=str(counters), GCOV_PREFIX_STRIP="0",
-                   NO_COLOR="1")
         print("Running " + config["project"] + " tests; counters: " + str(counters), flush=True)
         test_started = time.monotonic()
         test_rc = logged([args.ctest, "--output-on-failure", "--parallel", str(args.jobs),
@@ -198,6 +205,8 @@ def main():
     parser.add_argument("--compiler", default="g++")
     parser.add_argument("--optimization", default="-O0")
     parser.add_argument("--jobs", type=int, default=1)
+    parser.add_argument("--library-dir", action="append", default=[],
+                        help="Prefer an instrumented shared-library directory when testing")
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error("--jobs must be positive")

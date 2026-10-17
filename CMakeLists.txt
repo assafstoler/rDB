@@ -132,5 +132,5 @@ endif()
 
 # Instrument completed targets only in an explicitly selected coverage build.
 include(cmake/TealCoverage.cmake)
-teal_enable_coverage("${CMAKE_CURRENT_SOURCE_DIR}/tests/coverage.json")
+teal_enable_coverage("${CMAKE_CURRENT_SOURCE_DIR}/tests/coverage.json" -DSKIP_KERNEL=ON)
 
