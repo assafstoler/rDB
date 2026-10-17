@@ -2971,9 +2971,11 @@ void rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data)
     else
         _rdb_flush (pool, NULL, fn, fn_data);
 
-    for (cnt = 0; cnt < pool->indexCount; cnt++)
-        if (pool->root[cnt])
-            pool->root[cnt] = NULL;
+    // No index may retain an endpoint into the records just released.
+    for (cnt = 0; cnt < pool->indexCount; cnt++) {
+        pool->root[cnt] = NULL;
+        pool->tail[cnt] = NULL;
+    }
 
 #ifdef RDB_POOL_COUNTERS
     pool_count_set(pool, 0);

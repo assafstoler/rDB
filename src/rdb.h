@@ -369,6 +369,7 @@ int         rdb_register_kcf_key_parts(rdb_pool_t *pool, int index,
                 const rdb_kcf_key_part_t *parts, size_t part_count);
 // rDB owns KPSTR values in registered indexes: it frees and clears them when
 // records are deleted by iteration or rdb_flush, before calling del_fn.
+// Flush empties all indexes and clears heads/tails and record count; the pool remains reusable.
 void        rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data);
 // Indexed record operations require 0 <= index < pool->indexCount and
 // index < RDB_POOL_MAX_IDX (the source index for moves). Invalid indexes leave
