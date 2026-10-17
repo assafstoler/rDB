@@ -1,0 +1,15 @@
+#ifndef RDB_BUILD_CONFIG_H
+#define RDB_BUILD_CONFIG_H
+
+/* Keep public value arguments aligned with the library's integer width. */
+#define RDB_BUILD_HAS_INT128 @RDB_BUILD_HAS_INT128@
+
+#if RDB_BUILD_HAS_INT128
+#ifndef USE_128_BIT_TYPES
+#define USE_128_BIT_TYPES 1
+#endif
+#elif defined(USE_128_BIT_TYPES)
+#error "USE_128_BIT_TYPES conflicts with the installed rDB build configuration"
+#endif
+
+#endif

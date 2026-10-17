@@ -6,11 +6,21 @@
 #define __rDB_h_
 
 #ifndef KM
-#include <sys/time.h>
-#include <stdint.h>
+#include "rdb_build_config.h"
+#include <pthread.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/time.h>
+#include <sys/types.h>
+typedef struct timeval rdb_timeval_t;
 #else
 #include <linux/types.h>
+typedef struct {
+    long tv_sec;
+    long tv_usec;
+} rdb_timeval_t;
 #endif
 
 #ifdef __cplusplus
@@ -101,7 +111,7 @@ extern "C" {
 // Data pool type (tree, list or fifo for now ... skip-lists planned)
 #define RDB_BTREE	(1 << 29) //16384	// use btree for key/index - we always use AVL now.
 #define RDB_LIST	(1 << 30) //32768	// use linked list for key storage
-#define RDB_NO_IDX  (1 << 31) // FIFO or LIFO - no Index
+#define RDB_NO_IDX  (1U << 31) // FIFO or LIFO - no Index
 
 
 #define RDB_KEYS (RDB_KPSTR | RDB_KSTR | RDB_KINT8 | RDB_KUINT8 | RDB_KINT16 | \
@@ -114,11 +124,11 @@ extern "C" {
 #define RDB_TREE_RIGHT  1
 #define PARENT_BAL_CNG 	1
 
-// Iterate(Delete) return codes.
-// values from 0 on up means a re-index of index n is needed (meaning that data that it part of the index has changes
+// Iteration callback results. Nonnegative index numbers and REINDEX_ALL are
+// reserved; they do not perform any reindexing.
 #define RDB_CB_OK			-1  		// continue;
 #define RDB_CB_DELETE_NODE 	-2  		// delete this node out of the tree / list
-#define RDB_CB_REINDEX_ALL	-3  		// more then one index data has changed re-index all
+#define RDB_CB_REINDEX_ALL	-3  		// reserved; not implemented
 #define RDB_CB_DELETE_NODE_AND_ABORT -4 // delete this node and stop iterating the tree
 #define RDB_CB_ABORT        -5  		// stop iterating the tree
 
@@ -179,7 +189,7 @@ typedef union {
     type_256		i256;
     type_u256 		u256;
 #endif
-    struct    		timeval tv;
+    rdb_timeval_t tv;
  //   TVA	   tva;
  //   U32a	   u32a;
 } rdb_key_union;
@@ -193,6 +203,16 @@ typedef struct balanced_pointer_pack_s {
     void 	*right;		// optional for rDB usage , user treats this as RO value
     int	balance;	// rDB uses to keep track of AVL tree balance
 } rdb_bpp_t;
+
+// A pool retains the first detected consistency failure until it is dropped.
+#define RDB_ERR_FAULTED (-5)
+typedef struct {
+    int code;
+    int index;
+    void *record;
+    const char *operation;
+    const char *reason;
+} rdb_fault_info_t;
 
 typedef struct RDB_POOLS {
     // pointer to 1st (root) node - new
@@ -231,14 +251,18 @@ typedef struct RDB_POOLS {
     pthread_mutex_t read_mutex;
 #endif
     //   rdb_index_data_t**  index_data;             ///< index data master containder - dynamic
-#ifdef RDB_POOL_COUNTERS
+    // Always present so RDB_POOL_COUNTERS does not change the public layout.
     uint32_t        record_count;
-#endif
+    // Zero until a consistency failure is recorded.
+    rdb_fault_info_t fault;
 }  rdb_pool_t;
 
 
 extern char   	*rdb_error_string;
 void        rdb_init(void);
+// Return -1 for NULL, 0 for a healthy pool, or 1 for a faulted pool.
+// If out is non-NULL, copy the saved fault information into it.
+int         rdb_pool_get_fault(const rdb_pool_t *pool, rdb_fault_info_t *out);
 int         rdb_error_value (int rv, char *err);
 void        rdb_error (char *err);
 rdb_pool_t *rdb_find_pool_by_name (char *poolName);

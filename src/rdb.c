@@ -117,6 +117,15 @@ void rdb_init (void)
     pool_root = NULL;
 }
 
+int rdb_pool_get_fault(const rdb_pool_t *pool, rdb_fault_info_t *out)
+{
+    if (!pool)
+        return -1;
+    if (out)
+        *out = pool->fault;
+    return pool->fault.code ? 1 : 0;
+}
+
 // Store internal error string to allow user to retrieve it, and return with
 // user set value. typical use will look like
 // Example: return rdv_error_value(-1, "failed to dance this dance");

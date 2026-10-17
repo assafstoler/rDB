@@ -74,11 +74,17 @@ configure_file (
 INCLUDE(CheckTypeSize)
 CHECK_TYPE_SIZE(__uint128_t USE_128_BIT_TYPES)
 if (${USE_128_BIT_TYPES})
- ADD_DEFINITIONS(-DUSE_128_BIT_TYPES)
+ set(RDB_BUILD_HAS_INT128 1)
  MESSAGE("Using native 128 bit types")
 else  (${USE_128_BIT_TYPES})
+ set(RDB_BUILD_HAS_INT128 0)
  MESSAGE("NOT Using native 128 bit types")
 endif (${USE_128_BIT_TYPES})
+
+configure_file("${PROJECT_SOURCE_DIR}/src/rdb_build_config.h.in"
+               "${PROJECT_BINARY_DIR}/rdb_build_config.h" @ONLY)
+include_directories("${PROJECT_BINARY_DIR}")
+list(APPEND rdb_INC "${PROJECT_BINARY_DIR}/rdb_build_config.h")
 
 ADD_DEFINITIONS(-DRDB_POOL_COUNTERS)
 
@@ -97,7 +103,7 @@ mark_as_advanced(INSTALL_LIB_DIR)
 
 
 INCLUDE_DIRECTORIES(${CMAKE_SRC_DIR}/src)
-set_target_properties(rdb PROPERTIES PUBLIC_HEADER ${rdb_INC})
+set_target_properties(rdb PROPERTIES PUBLIC_HEADER "${rdb_INC}")
 set_target_properties(rdb PROPERTIES VERSION ${RDBLIB_VERSION_STRING} SOVERSION ${RDBLIB_VERSION_MAJOR} )
 INSTALL(TARGETS rdb
         LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/${INSTALL_LIB_DIR}

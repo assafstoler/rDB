@@ -64,6 +64,10 @@ static void test_index_ranges(void)
     if (!pool)
         return;
 
+    rdb_fault_info_t fault;
+    CHECK(rdb_pool_get_fault(pool, &fault) == 0);
+    CHECK(fault.code == 0);
+
     CHECK(rdb_register_um_idx(pool, 0, 0, RDB_BTREE | RDB_KINT32, NULL) == -1);
     CHECK(rdb_register_um_idx(pool, -1, 0, RDB_BTREE | RDB_KINT32, NULL) == -2);
     CHECK(rdb_register_um_idx(pool, 2, 0, RDB_BTREE | RDB_KINT32, NULL) == -2);
