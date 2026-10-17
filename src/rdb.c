@@ -528,13 +528,7 @@ void rdb_drop_pool (rdb_pool_t *pool) {
         next->prev = pool->prev;
     }
     if (pool_root == pool) {
-        if (prev) {
-            pool_root = prev;
-        } else if (next) {
-            pool_root = next;
-        } else {
-            pool_root = NULL;
-        }
+        pool_root = next;
     }
 
 #ifndef KM
