@@ -293,8 +293,10 @@ int         rdb_pool_get_fault(const rdb_pool_t *pool, rdb_fault_info_t *out);
 int         rdb_error_value (int rv, char *err);
 void        rdb_error (char *err);
 rdb_pool_t *rdb_find_pool_by_name (char *poolName);
-// key_size is the inline buffer capacity for RDB_KSTR and zero for every
-// other primary index.
+// Both pool creation APIs accept 1..RDB_POOL_MAX_IDX indexes. In user space,
+// mutex initialization failure returns NULL, reports the lock and error code,
+// and leaves the registry unchanged. key_size is the inline buffer capacity
+// for RDB_KSTR and zero for every other primary index.
 rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset,
                 int FLAGS, void *compare_fn, size_t key_size);
 rdb_pool_t *rdb_register_um_pool (char *poolName, 

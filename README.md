@@ -55,6 +55,11 @@ APIs return `NULL`; `rdb_insert_one()`, `rdb_delete_one()`, and `rdb_move2()`
 return `-1`. `rdb_get_neigh()` clears both neighbor outputs. `rdb_iterate()` and
 `rdb_dump()` report an error and do no traversal or output.
 
+User-space pool creation checks both mutex initializations. If either fails,
+registration returns `NULL`, reports the failed lock and error code, releases
+any initialized lock and allocations, and leaves the registry unchanged. The
+same pool name can be used for a later retry.
+
 If rDB detects an inconsistent index while changing a record, it stores the
 first failure in that pool and returns `RDB_ERR_FAULTED` from integer APIs that
 can report it. `rdb_pool_get_fault()` retrieves the saved index, record,

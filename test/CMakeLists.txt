@@ -23,6 +23,14 @@ add_executable(rdb_reindex_tests rdb_reindex_tests.c)
 add_executable(rdb_header_consumer_c rdb_header_consumer.c)
 add_executable(rdb_header_consumer_cpp rdb_header_consumer.cpp)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    add_executable(rdb_mutex_init_tests rdb_mutex_init_tests.c
+        "${CMAKE_SOURCE_DIR}/src/rdb.c")
+    set_property(TARGET rdb_mutex_init_tests PROPERTY LINK_LIBRARIES pthread)
+    set_property(TARGET rdb_mutex_init_tests APPEND_STRING PROPERTY LINK_FLAGS
+        " -Wl,--wrap=pthread_mutex_init,--wrap=pthread_mutex_destroy")
+endif()
+
 #install(TARGETS rdb_test DESTINATION test)
 
 enable_testing()
@@ -33,6 +41,9 @@ add_test (NAME rdb_fault_tests COMMAND rdb_fault_tests)
 add_test (NAME rdb_reindex_tests COMMAND rdb_reindex_tests)
 add_test (NAME rdb_header_consumer_c COMMAND rdb_header_consumer_c)
 add_test (NAME rdb_header_consumer_cpp COMMAND rdb_header_consumer_cpp)
+if(TARGET rdb_mutex_init_tests)
+    add_test (NAME rdb_mutex_init_tests COMMAND rdb_mutex_init_tests)
+endif()
 
 add_test (rdb_test_init_clean rdb_test -t1)
 set_tests_properties (rdb_test_init_clean

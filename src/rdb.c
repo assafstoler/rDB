@@ -576,21 +576,12 @@ rdb_pool_t *rdb_add_pool (
         return NULL;
     }
 
-    // inserting myself to the top of the pool, why? 
-    // because it is easy, don't need to look for the end of the pool chain
-    pool->next = pool_root;
-
-    if (pool_root)
-        pool_root->prev = pool;
-
-    pool_root = pool;
     name_length = strlen (poolName);
     pool->name = rdb_alloc (name_length + 1);
 
     if (pool->name == NULL) {
         rdb_error ("rDB: Fatal: pool allocation error, out of memor for pool"
                 " name");
-        pool_root = pool->next;
         if (pool->private_data) rdb_free(pool->private_data);
         rdb_free (pool);
         return NULL;
@@ -602,7 +593,7 @@ rdb_pool_t *rdb_add_pool (
     if (-1 == set_pool_fn_pointers(pool, 0, FLAGS, compare_fn)){
         rdb_error ("rDB: Fatal: pool registration without type or matching"
                 " compare fn");
-        pool_root = pool->next;
+        rdb_free(pool->name);
         if (pool->private_data) rdb_free(pool->private_data);
         rdb_free (pool);
         return NULL;
@@ -621,9 +612,33 @@ rdb_pool_t *rdb_add_pool (
     sema_init(&pool->read_mutex, 1);
     sema_init(&pool->write_mutex, 1);
 #else
-    pthread_mutex_init(&pool->read_mutex, NULL); 
-    pthread_mutex_init(&pool->write_mutex, NULL); 
+    const char *failed_mutex = "read";
+    int mutex_error = pthread_mutex_init(&pool->read_mutex, NULL);
+    if (mutex_error == 0) {
+        failed_mutex = "write";
+        mutex_error = pthread_mutex_init(&pool->write_mutex, NULL);
+        if (mutex_error != 0)
+            pthread_mutex_destroy(&pool->read_mutex);
+    }
+    if (mutex_error != 0) {
+        char message[128];
+        snprintf(message, sizeof(message),
+                "Pool %s mutex initialization failed: %s (%d)",
+                failed_mutex, strerror(mutex_error), mutex_error);
+        rdb_error(message);
+        rdb_free(pool->name);
+        if (pool->private_data) rdb_free(pool->private_data);
+        rdb_free(pool);
+        return NULL;
+    }
 #endif
+
+    // Publish only after all pool resources have initialized successfully.
+    pool->next = pool_root;
+    if (pool_root)
+        pool_root->prev = pool;
+    pool_root = pool;
+
     return pool;
 }
 
