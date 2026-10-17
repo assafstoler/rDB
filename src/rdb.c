@@ -514,8 +514,11 @@ void rdb_drop_pool (rdb_pool_t *pool) {
     rdb_pool_private_t *private_data;
     int index;
 
-    if (pool && pool->name); // info("dropping %s\n", pool->name);
-    else return;
+    rdb_sem_lock(&reg_mutex);
+    if (!(pool && pool->name)) {
+        rdb_sem_unlock(&reg_mutex);
+        return;
+    }
 
     next=pool->next;
     prev=pool->prev;
@@ -560,6 +563,7 @@ void rdb_drop_pool (rdb_pool_t *pool) {
         pool = NULL;
     }
 
+    rdb_sem_unlock(&reg_mutex);
     return;
 }
 
