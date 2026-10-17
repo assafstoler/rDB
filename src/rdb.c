@@ -1095,6 +1095,23 @@ struct dump_state {
     int max_levels;
 };
 
+#ifdef USE_128_BIT_TYPES
+// printf has no native 128-bit decimal specifier. Keep the full magnitude;
+// 39 digits, an optional sign and the terminator fit in this stack buffer.
+static void dump_integer128(__uint128_t value, int negative, char *separator)
+{
+    char buffer[41];
+    char *digits = buffer + sizeof(buffer) - 1;
+    *digits = '\0';
+    do {
+        *--digits = '0' + value % 10;
+        value /= 10;
+    } while (value);
+    if (negative) *--digits = '-';
+    rdb_c_info("%s%s", digits, separator);
+}
+#endif
+
 // TODO: Bring this up-to-date
 // Note: type casting used to 
 // 1) hash compiler about identcal type warnings, like 
@@ -1189,17 +1206,18 @@ static void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start
                 rdb_c_info ("%llu%s", (unsigned long long) key->u64, separator);
                 break;
 
-            //TODO: this is a bug, data below may be truncated.
-            //need to craft 128bit decimal print functions.
-            //
 #ifdef USE_128_BIT_TYPES
             case RDB_KUINT128:
-                rdb_c_info ("%llu%s", (unsigned long long) key->u128, separator);
+                dump_integer128(key->u128, 0, separator);
                 break;
 
-            case RDB_KINT128:
-                rdb_c_info ("%lld%s", (long long) key->u128, separator);
+            case RDB_KINT128: {
+                int negative = key->i128 < 0;
+                __uint128_t value = (__uint128_t)key->i128;
+                // Negate unsigned magnitude: signed negation would overflow at MIN.
+                dump_integer128(negative ? -value : value, negative, separator);
                 break;
+            }
 #endif
             case RDB_KSIZE_t:
                 rdb_c_info ("%zu%s", (size_t) key->st, separator);
