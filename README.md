@@ -48,6 +48,11 @@ Note on freeing memory:
 Some (most) rdb functions that can delete records will do the freeing for you, if you supply it with the correct data.
 Others will only unlink the data record fromt he internal tree's ot lists, and return you a pointer to the data. it's your responsibility to free the data at that time. see each fn() documentation to know which apply.
 
+`rdb_drop_pool()` releases pool metadata and destroys its user-space mutexes;
+it does not free unmanaged records. Stop users and waiters, and release both
+pool locks before dropping it. `rdb_gc()` and `rdb_clean()` use the same pool
+teardown path.
+
 Indexed record operations require `0 <= index < pool->indexCount` and
 `index < RDB_POOL_MAX_IDX`; moves validate their source index. An invalid index
 leaves records and pool metadata unchanged. Lookup, delete, and move pointer

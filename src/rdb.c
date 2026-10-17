@@ -513,6 +513,12 @@ void rdb_drop_pool (rdb_pool_t *pool) {
         }
     }
 
+#ifndef KM
+    // Pool users must be quiescent and both locks released before dropping it.
+    pthread_mutex_destroy(&pool->read_mutex);
+    pthread_mutex_destroy(&pool->write_mutex);
+#endif
+
     if (pool->name) {
         //info ("freeing %s\n", pool->name);
         rdb_free (pool->name);

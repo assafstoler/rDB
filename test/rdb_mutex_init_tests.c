@@ -71,6 +71,46 @@ static void keep_record(void *record, void *unused)
     (void)unused;
 }
 
+static void reset_mutex_watch(void)
+{
+    mutex_attempts = 0;
+    mutex_successes = 0;
+    mutex_destroys = 0;
+    fail_mutex_init = 0;
+    memset(initialized_mutexes, 0, sizeof(initialized_mutexes));
+}
+
+static rdb_pool_t *create_tracked_pool(const char *name, int key_offset)
+{
+    rdb_pool_t *pool;
+    reset_mutex_watch();
+    watch_mutexes = 1;
+    pool = rdb_register_um_pool((char *)name, 1, key_offset,
+            RDB_BTREE | RDB_KINT32, NULL, 0);
+    watch_mutexes = 0;
+    CHECK(pool != NULL);
+    CHECK(mutex_attempts == 2 && mutex_successes == 2);
+    return pool;
+}
+
+static void check_tracked_mutexes_destroyed(void)
+{
+    CHECK(mutex_destroys == 2);
+    CHECK(initialized_mutexes[0] == 0 && initialized_mutexes[1] == 0);
+}
+
+static void drop_tracked_pool(rdb_pool_t *pool)
+{
+    reset_mutex_watch();
+    mutex_successes = 2;
+    initialized_mutexes[0] = (uintptr_t)&pool->read_mutex;
+    initialized_mutexes[1] = (uintptr_t)&pool->write_mutex;
+    watch_mutexes = 1;
+    rdb_drop_pool(pool);
+    watch_mutexes = 0;
+    check_tracked_mutexes_destroyed();
+}
+
 static void check_failure(create_pool_fn create, const char *api,
         int failed_init, rdb_pool_t *kept, record_t *record)
 {
@@ -110,15 +150,22 @@ static void check_failure(create_pool_fn create, const char *api,
         CHECK(strstr(rdb_error_string, code) != NULL);
     }
 
+    reset_mutex_watch();
+    watch_mutexes = 1;
     retry = create(name, 1, key_offset, RDB_BTREE | RDB_KINT32, NULL, 0);
+    watch_mutexes = 0;
     CHECK(retry != NULL);
+    CHECK(mutex_attempts == 2 && mutex_successes == 2);
     CHECK(rdb_find_pool_by_name(name) == retry);
     if (retry) {
         CHECK(pthread_mutex_trylock(&retry->read_mutex) == 0);
         CHECK(pthread_mutex_unlock(&retry->read_mutex) == 0);
         CHECK(pthread_mutex_trylock(&retry->write_mutex) == 0);
         CHECK(pthread_mutex_unlock(&retry->write_mutex) == 0);
+        watch_mutexes = 1;
         rdb_drop_pool(retry);
+        watch_mutexes = 0;
+        check_tracked_mutexes_destroyed();
     }
     CHECK(memcmp(kept_before, kept, sizeof(*kept)) == 0);
     CHECK(rdb_get_const(kept, 0, record->key) == record);
@@ -133,12 +180,15 @@ int main(void)
     record_t *record;
 
     rdb_init();
-    kept = rdb_register_um_pool("mutex-kept", 1, key_offset,
-            RDB_BTREE | RDB_KINT32, NULL, 0);
-    CHECK(kept != NULL);
+    kept = create_tracked_pool("mutex-kept", key_offset);
     record = calloc(1, sizeof(*record));
     CHECK(record != NULL);
-    if (!kept || !record) goto done;
+    if (!kept || !record) {
+        if (kept) drop_tracked_pool(kept);
+        free(record);
+        rdb_clean(0);
+        return EXIT_FAILURE;
+    }
     record->key = 17;
     CHECK(rdb_insert(kept, record) == 1);
 
@@ -147,11 +197,28 @@ int main(void)
             check_failure(create[api], api_names[api], failed_init,
                     kept, record);
 
-done:
-    if (kept) rdb_flush(kept, keep_record, NULL);
-    if (kept) rdb_drop_pool(kept);
+    rdb_flush(kept, keep_record, NULL);
+    drop_tracked_pool(kept);
     free(record);
-    rdb_clean(0);
+
+    rdb_pool_t *gc_pool = create_tracked_pool("mutex-gc", key_offset);
+    if (gc_pool) {
+        gc_pool->drop = 1;
+        watch_mutexes = 1;
+        rdb_gc();
+        watch_mutexes = 0;
+        check_tracked_mutexes_destroyed();
+        CHECK(rdb_find_pool_by_name("mutex-gc") == NULL);
+    }
+
+    rdb_pool_t *clean_pool = create_tracked_pool("mutex-clean", key_offset);
+    if (clean_pool) {
+        watch_mutexes = 1;
+        rdb_clean(0);
+        watch_mutexes = 0;
+        check_tracked_mutexes_destroyed();
+        CHECK(rdb_find_pool_by_name("mutex-clean") == NULL);
+    }
     if (failures) return EXIT_FAILURE;
     puts("Ok");
     return EXIT_SUCCESS;
