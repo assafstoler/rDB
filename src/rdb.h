@@ -322,6 +322,8 @@ int         rdb_insert_one (rdb_pool_t *pool, int index, void *data);
 // For RDB_KPTR lookup/delete/move, pass &key (the address of a pointer value).
 // A key whose value is NULL is queried with &key; data == NULL selects the root.
 void       *rdb_get (rdb_pool_t *pool, int idx, const void *data);
+// The _const APIs reject out-of-range values for built-in numeric and pointer
+// keys. Custom comparators receive &value; FIFO/LIFO indexes ignore the value.
 void       *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value);
 // Tree lookup: on a miss, return NULL and the closest lower/higher records.
 // before/after must point to writable pointer variables; both are always assigned.

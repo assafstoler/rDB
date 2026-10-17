@@ -1771,11 +1771,59 @@ void   *rdb_get (rdb_pool_t *pool, int idx, const void *data)
     return _rdb_get (pool, idx, data, NULL, 0);
 }
 
+union constant_lookup_storage {
+    rdb_key_union number;
+    void *pointer;
+};
+
+/* Convert value queries to their registered key type before pointer lookup. */
+static void *constant_lookup_key(rdb_pool_t *pool, int index, __intmax_t *value,
+        union constant_lookup_storage *key)
+{
+    if (!valid_pool_index(pool, index) || pool->fault.code)
+        return NULL;
+
+#define CONSTANT_INTEGER(type, member, comparator) \
+    if (pool->get_fn[index] == comparator) { \
+        key->number.member = (type)*value; \
+        if ((__intmax_t)key->number.member != *value) return NULL; \
+        return &key->number.member; \
+    }
+    CONSTANT_INTEGER(int8_t, i8, key_cmp_int8)
+    CONSTANT_INTEGER(uint8_t, u8, key_cmp_uint8)
+    CONSTANT_INTEGER(int16_t, i16, key_cmp_int16)
+    CONSTANT_INTEGER(uint16_t, u16, key_cmp_uint16)
+    CONSTANT_INTEGER(int32_t, i32, key_cmp_int32)
+    CONSTANT_INTEGER(uint32_t, u32, key_cmp_uint32)
+    CONSTANT_INTEGER(int64_t, i64, key_cmp_int64)
+    CONSTANT_INTEGER(uint64_t, u64, key_cmp_uint64)
+    CONSTANT_INTEGER(size_t, st, key_cmp_size_t)
+    CONSTANT_INTEGER(ssize_t, sst, key_cmp_ssize_t)
+#ifdef USE_128_BIT_TYPES
+    CONSTANT_INTEGER(__int128_t, i128, key_cmp_int128)
+    CONSTANT_INTEGER(__uint128_t, u128, key_cmp_uint128)
+#endif
+#undef CONSTANT_INTEGER
+
+    if (pool->get_fn[index] == key_cmp_ptr) {
+        size_t address = (size_t)*value;
+        if ((__intmax_t)address != *value)
+            return NULL;
+        key->pointer = (void *)address;
+        return &key->pointer;
+    }
+
+    // Queues ignore the value; custom comparators receive its original address.
+    return value;
+}
+
 void   *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value)
 {
-    if (!valid_pool_index(pool, idx) || pool->fault.code) return NULL;
+    union constant_lookup_storage storage;
+    void *key = constant_lookup_key(pool, idx, &value, &storage);
+    if (!key) return NULL;
     debug("Get:pool=%s,idx=%d", pool->name, idx);
-    return _rdb_get/*_const*/ (pool, idx, &value, NULL, 0);
+    return _rdb_get(pool, idx, key, NULL, 0);
 }
 
 void   *_rdb_get_neigh (
@@ -3418,9 +3466,9 @@ retest_delete_cond:
 
 void   *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value)
 {
-    if (!valid_pool_index(pool, idx) || pool->fault.code) return NULL;
-    debug("Get:pool=%s,idx=%d", pool->name, idx);
-    return rdb_delete (pool, idx, &value); //, NULL, 0);
+    union constant_lookup_storage storage;
+    void *key = constant_lookup_key(pool, idx, &value, &storage);
+    return key ? rdb_delete(pool, idx, key) : NULL;
 }
 
 // Every index must confirm removal before count or caller ownership changes.
@@ -3522,7 +3570,9 @@ static int move_record(rdb_pool_t *dst, rdb_pool_t *src, int index, void *key,
 void *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx,
         __intmax_t value)
 {
-    return rdb_move(dst_pool, src_pool, idx, &value);
+    union constant_lookup_storage storage;
+    void *key = constant_lookup_key(src_pool, idx, &value, &storage);
+    return key ? rdb_move(dst_pool, src_pool, idx, key) : NULL;
 }
 
 void *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data)
