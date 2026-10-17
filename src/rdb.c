@@ -223,6 +223,50 @@ char * rdb_print_pool_stats (char *buf, int max_len)
 #endif
     return (buf);
 }
+
+static int valid_index_flags(const char *name, int index, uint32_t flags,
+        void *compare_fn)
+{
+    const uint32_t builtins = RDB_KSTR | RDB_KPSTR | RDB_KINT8 | RDB_KUINT8 |
+        RDB_KINT16 | RDB_KUINT16 | RDB_KINT32 | RDB_KUINT32 |
+        RDB_KINT64 | RDB_KUINT64 | RDB_KPTR | RDB_KSIZE_t | RDB_KSSIZE_t
+#ifdef USE_128_BIT_TYPES
+        | RDB_KINT128 | RDB_KUINT128
+#endif
+        ;
+    const uint32_t kinds = builtins | RDB_KCF | RDB_NOKEYS;
+    const uint32_t allowed = kinds | RDB_BTREE | RDB_KASC | (uint32_t)RDB_NO_IDX;
+    const uint32_t kind = flags & kinds;
+    const char *reason = NULL;
+
+    if (flags & RDB_LIST)
+        reason = "RDB_LIST is unsupported; use RDB_BTREE";
+    else if (flags & RDB_KDEC)
+        reason = "RDB_KDEC (descending order) is unsupported";
+    else if (flags & ~allowed)
+        reason = "unknown or unsupported key/option bits";
+    else if (!(flags & RDB_BTREE))
+        reason = "RDB_BTREE is required, including for FIFO/LIFO";
+    else if (!kind || (kind & (kind - 1)))
+        reason = "select exactly one key type, FIFO or LIFO";
+    else if ((flags & RDB_NO_IDX) && !(kind & RDB_NOKEYS))
+        reason = "RDB_NO_IDX is only valid with FIFO/LIFO";
+    else if ((kind & RDB_NOKEYS) && compare_fn)
+        reason = "FIFO/LIFO cannot use a comparator";
+    else if (kind == RDB_KCF && !compare_fn)
+        reason = "RDB_KCF requires a comparator";
+
+    if (reason) {
+        char message[256];
+        snprintf(message, sizeof(message), "Pool '%s' index %d flags 0x%08x: %s",
+                name, index, (unsigned)flags, reason);
+        rdb_error(message);
+        return 0;
+    }
+
+    return 1;
+}
+
 // rDB Internal. this will set the various compate functions for the rDB
 // data maganment routines.
 int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
@@ -356,6 +400,18 @@ rdb_pool_t *rdb_add_pool (
 
     rdb_pool_t *pool;
     int name_length;
+
+    if (indexCount < 1 || indexCount > RDB_POOL_MAX_IDX) {
+        char message[96];
+        snprintf(message, sizeof(message),
+                "Invalid pool index count %d (expected 1..%d)",
+                indexCount, RDB_POOL_MAX_IDX);
+        rdb_error(message);
+        return NULL;
+    }
+
+    if (!valid_index_flags(poolName, 0, (uint32_t)FLAGS, compare_fn))
+        return NULL;
 
     pool = rdb_alloc(sizeof (rdb_pool_t));
 
@@ -512,14 +568,19 @@ int rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
             "Index 0 (zero) can only be set via rdb_register_pool"));
     }
 
-    if (idx >= RDB_POOL_MAX_IDX) {
+    if (!pool || idx < 0 || idx >= RDB_POOL_MAX_IDX || idx >= pool->indexCount) {
         rdb_sem_unlock(&reg_mutex);
-        return (rdb_error_value (-2, "Index >= RDB_POOL_MAX_IDX"));
+        return (rdb_error_value (-2, "Index outside pool's declared index range"));
     }
 
     if (pool->FLAGS[idx] != 0) {
         rdb_sem_unlock(&reg_mutex);
         return (rdb_error_value (-3, "Redefinition of used index not allowed"));
+    }
+
+    if (!valid_index_flags(pool->name, idx, (uint32_t)FLAGS, compare_fn)) {
+        rdb_sem_unlock(&reg_mutex);
+        return -4;
     }
 
     if (-1 == set_pool_fn_pointers(pool, idx, FLAGS, compare_fn)){

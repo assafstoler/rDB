@@ -16,9 +16,13 @@ add_executable(rdb_test rdb_test.c)
 
 target_link_libraries(rdb_test m)
 
+add_executable(rdb_registration_guard_tests rdb_registration_guard_tests.c)
+
 #install(TARGETS rdb_test DESTINATION test)
 
 enable_testing()
+
+add_test (NAME rdb_registration_guard_tests COMMAND rdb_registration_guard_tests)
 
 add_test (rdb_test_init_clean rdb_test -t1)
 set_tests_properties (rdb_test_init_clean
@@ -94,5 +98,5 @@ set_tests_properties (rdb_test_data_move
 
 add_test (rdb_test_registra rdb_test -t6)
 set_tests_properties (rdb_test_registra
-    PROPERTIES PASS_REGULAR_EXPRESSION "^rDB: Fatal: Duplicte pool name in rdb_register_pool\nrDB: Fatal: pool registration without type or matching compare fn\nIndex 0 \\\(zero\\\) can only be set via rdb_register_pool\nIndex >= RDB_POOL_MAX_IDX\nRedefinition of used index not allowed\nIndex Registration without valid type or compare fn. Ignored\nOk\n$")
+    PROPERTIES PASS_REGULAR_EXPRESSION "^rDB: Fatal: Duplicte pool name in rdb_register_pool\nPool 'null_custom_pool' index 0 flags .*: RDB_KCF requires a comparator\nIndex 0 \\\(zero\\\) can only be set via rdb_register_pool\nIndex outside pool's declared index range\nRedefinition of used index not allowed\nIndex outside pool's declared index range\nOk\n$")
 
