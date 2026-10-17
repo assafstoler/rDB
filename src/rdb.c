@@ -500,7 +500,8 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
         pool->get_const_fn[i] = key_cmp_const_ssize_t;
     } else if (flags & RDB_KPTR) {
         pool->fn[i] = key_cmp_ptr;
-        pool->get_fn[i] = key_cmp_const_ptr;
+        // Lookup receives addresses of pointer keys, just like insertion.
+        pool->get_fn[i] = key_cmp_ptr;
         pool->get_const_fn[i] = key_cmp_const_ptr;
     } 
 #ifdef USE_128_BIT_TYPES
