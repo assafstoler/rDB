@@ -20,6 +20,8 @@ import coverage_summary
 
 ROOT = Path(__file__).resolve().parents[1]
 GCOVR = os.environ.get("TEAL_TEST_GCOVR") or shutil.which("gcovr")
+CMAKE_HAS_JUNIT = tuple(int(part) for part in subprocess.check_output(
+    ["cmake", "--version"], text=True).splitlines()[0].split()[-1].split(".")[:2]) >= (3, 21)
 
 
 class CoverageRunnerTests(unittest.TestCase):
@@ -240,7 +242,7 @@ class CoverageRunnerTests(unittest.TestCase):
                 configure = ["cmake", "-S", str(source), "-B", str(build),
                              "-DTEAL_COVERAGE_GCOVR=/no/such/gcovr", "-DTEAL_COVERAGE_JOBS=2",
                              "-DTEAL_TEST_HELPER=" + str(ROOT / "cmake/TealCoverage.cmake")]
-                if cross:
+                if cross or not CMAKE_HAS_JUNIT:
                     configure += ["-DCMAKE_SYSTEM_NAME=Linux"]
                 result = subprocess.run(configure, text=True, capture_output=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -257,7 +259,8 @@ class CoverageRunnerTests(unittest.TestCase):
                 commands = json.loads((build / "compile_commands.json").read_text())
                 self.assertTrue(all("--coverage" not in c["command"] for c in commands))
 
-    @unittest.skipUnless(GCOVR, "Install tests/coverage-requirements.txt for compiler integration")
+    @unittest.skipUnless(GCOVR and CMAKE_HAS_JUNIT,
+                         "Compiler integration requires gcovr and CMake 3.21+ (CTest JUnit)")
     def test_normal_build_coverage_target_is_isolated_and_repeatable(self):
         generators = ["Unix Makefiles"] + (["Ninja"] if shutil.which("ninja") else [])
         for generator in generators:
@@ -323,7 +326,8 @@ class CoverageRunnerTests(unittest.TestCase):
                 self.assertTrue(first.is_dir())
                 self.assertTrue((report / "coverage.xml").is_file())
 
-    @unittest.skipUnless(GCOVR, "Install tests/coverage-requirements.txt for compiler integration")
+    @unittest.skipUnless(GCOVR and CMAKE_HAS_JUNIT,
+                         "Compiler integration requires gcovr and CMake 3.21+ (CTest JUnit)")
     def test_native_fixture_and_failed_test_reporting(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
