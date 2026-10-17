@@ -980,12 +980,18 @@ int key_cmp_ptr (void **old, void **new)
 {
     if ( new == NULL ) {
        return -1;
-    } 
-    return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
+    }
+    uintptr_t old_address = (uintptr_t)*old;
+    uintptr_t new_address = (uintptr_t)*new;
+    return (new_address < old_address) ? -1 :
+            ((new_address > old_address) ? 1 : 0);
 }
 int key_cmp_const_ptr (void *old, size_t new)
 {
-    return ((void *) new <  old) ? -1 : (( (void *) new > old) ? 1 : 0); 
+    uintptr_t old_address = (uintptr_t)old;
+    uintptr_t new_address = (uintptr_t)new;
+    return (new_address < old_address) ? -1 :
+            ((new_address > old_address) ? 1 : 0);
 }
 
 int key_cmp_size_t (size_t *old, size_t *new)
