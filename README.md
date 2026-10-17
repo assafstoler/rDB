@@ -206,3 +206,9 @@ int my_print_fn(void *data, void *user_ptr){
 	return RDB_CB_OK;
 }
 ```
+
+## Build and test
+
+See [testing.md](testing.md) for current CMake, CTest, installation, and
+coverage instructions. Regression targets are enabled by default and can be
+omitted with `-DBUILD_TESTING=OFF`.

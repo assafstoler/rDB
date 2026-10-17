@@ -1,0 +1,59 @@
+# Build and test rDB
+
+Build the user-space library and run its CTest suite with:
+
+```sh
+cmake -S . -B build -DSKIP_KERNEL=ON
+cmake --build build -j"$(nproc)"
+ctest --test-dir build --output-on-failure
+```
+
+The default single-configuration build is Debug with `-O2` and symbols. Release
+also uses `-O2`. Regression targets are enabled by default; configure with
+`-DBUILD_TESTING=OFF` to build the library and demo without them. Kernel module
+builds require a matching kernel development tree. Leave `SKIP_KERNEL` unset to
+include that build when the required headers are available.
+
+Install to a staging directory without changing system libraries:
+
+```sh
+DESTDIR="$PWD/build/stage" cmake --install build
+```
+
+The normal library directory is `/usr/lib`. Configure with `-DLEGACY_BUILD=ON`
+to install under `/usr/lib64` instead. Both modes install the public headers
+under `/usr/include/rdb`.
+
+## Coverage
+
+Coverage is optional and does not instrument or rebuild the normal binaries.
+The `coverage` target creates a separate `build/coverage/` build, runs the
+registered tests, and publishes its report under
+`build/coverage/coverage-report/`:
+
+```sh
+python3 -m venv build/coverage-tools
+build/coverage-tools/bin/pip install -r tests/coverage-requirements.txt
+cmake --build build --target coverage
+```
+
+Coverage reporting requires a native GCC 8+ toolchain, CMake 3.21+ (CTest JUnit
+output), Python 3.8+, and gcovr 8.6. The helper finds the reporting tools in
+`build/coverage-tools` when installed by the commands above. To tune build and
+test/report parallelism, set `TEAL_COVERAGE_JOBS` when configuring the normal
+build. The generated report includes HTML, Cobertura XML, CTest JUnit results,
+coverage summaries, and run metadata. Kernel and demo code are outside the
+library coverage scope.
+
+A coverage build can also be configured directly:
+
+```sh
+cmake -S . -B build/coverage -DSKIP_KERNEL=ON -DBUILD_TESTING=ON \
+  -DTEAL_ENABLE_COVERAGE=ON \
+  -DTEAL_COVERAGE_GCOVR="$PWD/build/coverage-tools/bin/gcovr"
+cmake --build build/coverage --target coverage -j"$(nproc)"
+```
+
+Run the report tooling's unit tests independently with
+`python3 -B tests/test_coverage_runner.py`. Compiler-backed report tests run
+when gcovr is available.
