@@ -55,7 +55,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
         "${CMAKE_SOURCE_DIR}/src/rdb.c")
     set_property(TARGET rdb_error_tests PROPERTY LINK_LIBRARIES pthread)
     set_property(TARGET rdb_error_tests APPEND_STRING PROPERTY LINK_FLAGS
-        " -Wl,--wrap=realloc")
+        " -Wl,--wrap=malloc")
 endif()
 
 #install(TARGETS rdb_test DESTINATION test)

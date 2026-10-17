@@ -209,20 +209,14 @@ void rdb_error (char *err)
     char *message;
 
     rdb_sem_lock(&rdb_error_mutex);
-#ifdef KM
-    message = kmalloc (strlen (err) + 1, GFP_KERNEL);
-#else
-    message = realloc (rdb_error_string, strlen (err) + 1);
-#endif
+    message = rdb_alloc (strlen (err) + 1);
 
     if (message == NULL)
         rdb_info ("rdb: failed to Alloc RAM for error message, original error was"
                 " \"%s\"\n", err);
     else {
         strcpy (message, err);
-#ifdef KM
-        kfree (rdb_error_string);
-#endif
+        rdb_free (rdb_error_string);
         rdb_error_string = message;
     }
 
