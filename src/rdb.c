@@ -1853,7 +1853,8 @@ void   *_rdb_get_neigh (
                 return (dataHead);              // special case, return root node
             }
 
-            if ((rc = pool->fn[index] (dataHead + pool->key_offset[index],
+            // Queries use lookup keys, not stored-field addresses (notably KPSTR).
+            if ((rc = pool->get_fn[index] (dataHead + pool->key_offset[index],
                                   (void *) data)) < 0) {
                 // left side
                 debug("Left Get\n");
