@@ -360,6 +360,8 @@ void        rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data
 // records and pool metadata unchanged. Pointer APIs return NULL; insert_one,
 // delete_one and move2 return -1. Iterate and dump report an error and do no work.
 void       *rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data);
+// Repeating this call on a still-live FIFO/LIFO record already unlinked by it
+// returns 0 without changing or faulting the pool; never pass freed storage.
 int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
 void       *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value);
 void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value);

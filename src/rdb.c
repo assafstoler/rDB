@@ -3123,6 +3123,8 @@ int _rdb_delete (
             if (pool->tail[lookupIndex] == data)
                 pool->tail[lookupIndex] = ppkLeft - lookupIndex;
         }
+        // Detached entries must not retain pointers to former neighbours.
+        ppk->left = ppk->right = NULL;
         return DELETE_REMOVED;
     } else if ((pool->FLAGS[lookupIndex] & RDB_BTREE) == RDB_BTREE) {
         debug("Delete:start: \n");
