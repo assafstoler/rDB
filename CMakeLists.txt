@@ -101,9 +101,15 @@ set(RDBLIB_VERSION_MINOR 0)
 set(RDBLIB_VERSION_PATCH 0)
 set(RDBLIB_VERSION_STRING ${RDBLIB_VERSION_MAJOR}.${RDBLIB_VERSION_MINOR}.${RDBLIB_VERSION_PATCH})
 
+if (DEFINED LEGACY_BUILD)
+    ADD_DEFINITIONS(-DLEGACY_BUILD)
+    set(LIBSUFFIX 64)
+else()
+    set(LIBSUFFIX "")
+endif()
 
 set(CMAKE_INSTALL_PREFIX /usr)
-set(INSTALL_LIB_DIR     lib CACHE PATH "Installation directory for libraries")
+set(INSTALL_LIB_DIR     lib${LIBSUFFIX} CACHE PATH "Installation directory for libraries")
 mark_as_advanced(INSTALL_LIB_DIR)
 
 
