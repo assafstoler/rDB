@@ -146,9 +146,58 @@ done:
 }
 #endif
 
+static void test_constant_comparators(void)
+{
+    int8_t i8 = 10;
+    uint8_t u8 = 10;
+    int16_t i16 = 10;
+    uint16_t u16 = 10;
+    int32_t i32 = 10;
+    uint32_t u32 = 10;
+    int64_t i64 = 10;
+    uint64_t u64 = 10;
+    size_t size = 10;
+    ssize_t ssize = 10;
+    int marker;
+    uintptr_t address = (uintptr_t)&marker;
+
+#define CHECK_ORDER(compare, key, low, same, high) do { \
+    CHECK((compare)(&(key), (low)) < 0); \
+    CHECK((compare)(&(key), (same)) == 0); \
+    CHECK((compare)(&(key), (high)) > 0); \
+} while (0)
+
+    CHECK_ORDER(key_cmp_const_int8, i8, 9, 10, 11);
+    CHECK_ORDER(key_cmp_const_uint8, u8, 9, 10, 11);
+    CHECK_ORDER(key_cmp_const_int16, i16, 9, 10, 11);
+    CHECK_ORDER(key_cmp_const_uint16, u16, 9, 10, 11);
+    CHECK_ORDER(key_cmp_const_int32, i32, 9, 10, 11);
+    CHECK_ORDER(key_cmp_const_uint32, u32, 9, 10, 11);
+    CHECK_ORDER(key_cmp_const_int64, i64, 9, 10, 11);
+    CHECK_ORDER(key_cmp_const_uint64, u64, 9, 10, 11);
+    CHECK_ORDER(key_cmp_const_size_t, size, 9, 10, 11);
+    CHECK_ORDER(key_cmp_const_ssize_t, ssize, 9, 10, 11);
+#undef CHECK_ORDER
+
+    CHECK(key_cmp_const_ptr(&marker, address - 1) < 0);
+    CHECK(key_cmp_const_ptr(&marker, address) == 0);
+    CHECK(key_cmp_const_ptr(&marker, address + 1) > 0);
+#ifdef USE_128_BIT_TYPES
+    __int128_t i128 = 10;
+    __uint128_t u128 = 10;
+    CHECK(key_cmp_const_int128(&i128, 9) < 0);
+    CHECK(key_cmp_const_int128(&i128, 10) == 0);
+    CHECK(key_cmp_const_int128(&i128, 11) > 0);
+    CHECK(key_cmp_const_uint128(&u128, 9) < 0);
+    CHECK(key_cmp_const_uint128(&u128, 10) == 0);
+    CHECK(key_cmp_const_uint128(&u128, 11) > 0);
+#endif
+}
+
 int main(void)
 {
     rdb_init();
+    test_constant_comparators();
     unsigned8_range();
     signed8_range();
     pointer_query();
