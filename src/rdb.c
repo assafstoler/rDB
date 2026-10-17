@@ -1112,18 +1112,14 @@ static void dump_integer128(__uint128_t value, int negative, char *separator)
 }
 #endif
 
-// TODO: Bring this up-to-date
-// Note: type casting used to 
-// 1) hash compiler about identcal type warnings, like 
-// uint32 and unisnged long ...
-// 2) handle int32 as long, since long is 32 bit on 16, 32 and 64 bit machines
-//
+// Keys are fields of their registered type, not necessarily rdb_key_union.
+// Read that type without imposing the widest union member's alignment.
 static void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start,
                        struct dump_state *state)
 {
     void  **searchNext;
     PP_T   *pp;
-    rdb_key_union *key;
+    const void *key;
 
     if (start == NULL && pool->root[index] == NULL) return;
 
@@ -1163,74 +1159,75 @@ static void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start
 
         switch (pool->FLAGS[index] & RDB_KEYS) {
             case RDB_KPTR:
-                rdb_c_info ("%p%s", (void *) key->pStr, separator);
+                rdb_c_info ("%p%s", *(void *const *)key, separator);
                 break;
 
             case RDB_KPSTR:
-                rdb_c_info ("%s%s", key->pStr, separator);
+                rdb_c_info ("%s%s", *(char *const *)key, separator);
                 break;
 
             case RDB_KSTR:
-                rdb_c_info ("%s%s", &key->str, separator);
+                rdb_c_info ("%s%s", (const char *)key, separator);
                 break;
 
             case RDB_KINT8:
-                rdb_c_info ("%hhd%s", key->i8, separator);
+                rdb_c_info ("%hhd%s", *(const int8_t *)key, separator);
                 break;
 
             case RDB_KINT16:
-                rdb_c_info ("%hd%s", key->i16, separator);
+                rdb_c_info ("%hd%s", *(const int16_t *)key, separator);
                 break;
 
             case RDB_KINT32:
-                rdb_c_info ("%ld%s", (long) key->i32, separator);
+                rdb_c_info ("%ld%s", (long) *(const int32_t *)key, separator);
                 break;
 
             case RDB_KINT64:
-                rdb_c_info ("%lld%s", (long long int) key->i64, separator);
+                rdb_c_info ("%lld%s", (long long int) *(const int64_t *)key, separator);
                 break;
 
             case RDB_KUINT8:
-                rdb_c_info ("%hhu%s", key->u8, separator);
+                rdb_c_info ("%hhu%s", *(const uint8_t *)key, separator);
                 break;
 
             case RDB_KUINT16:
-                rdb_c_info ("%hu%s", key->u16, separator);
+                rdb_c_info ("%hu%s", *(const uint16_t *)key, separator);
                 break;
 
             case RDB_KUINT32:
-                rdb_c_info ("%lu%s", (unsigned long) key->u32, separator);
+                rdb_c_info ("%lu%s", (unsigned long) *(const uint32_t *)key, separator);
                 break;
 
             case RDB_KUINT64:
-                rdb_c_info ("%llu%s", (unsigned long long) key->u64, separator);
+                rdb_c_info ("%llu%s", (unsigned long long) *(const uint64_t *)key, separator);
                 break;
 
 #ifdef USE_128_BIT_TYPES
             case RDB_KUINT128:
-                dump_integer128(key->u128, 0, separator);
+                dump_integer128(*(const __uint128_t *)key, 0, separator);
                 break;
 
             case RDB_KINT128: {
-                int negative = key->i128 < 0;
-                __uint128_t value = (__uint128_t)key->i128;
+                __int128_t number = *(const __int128_t *)key;
+                int negative = number < 0;
+                __uint128_t value = (__uint128_t)number;
                 // Negate unsigned magnitude: signed negation would overflow at MIN.
                 dump_integer128(negative ? -value : value, negative, separator);
                 break;
             }
 #endif
             case RDB_KSIZE_t:
-                rdb_c_info ("%zu%s", (size_t) key->st, separator);
+                rdb_c_info ("%zu%s", *(const size_t *)key, separator);
                 break;
 
             case RDB_KSSIZE_t:
-                rdb_c_info ("%zd%s", (ssize_t) key->sst, separator);
+                rdb_c_info ("%zd%s", *(const ssize_t *)key, separator);
                 break;
             // we can't print custom functions data so we print the address
             // TODO: Consider adding a print-to-str fn() hook to pool, so we can dump custom-index data
             case RDB_KCF:
             case RDB_KCFUT:
-                rdb_c_info ("%p%s", key, separator);
+                rdb_c_info ("%p%s", (void *)key, separator);
                 break;
  /*           case RDB_KTME:
                 printoutalways ("Dump_TME: %ld:%ld\n", key->tv.tv_sec, key->tv.tv_usec);
