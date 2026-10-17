@@ -179,6 +179,14 @@ void rdb_error (char *err)
     rdb_sem_unlock(&rdb_error_mutex);
 }
 
+// Validate public index arguments before indexing pool metadata. Recursive
+// tree/list helpers only receive indexes that have already passed this check.
+static int valid_pool_index(const rdb_pool_t *pool, int index)
+{
+    return pool && index >= 0 && index < RDB_POOL_MAX_IDX &&
+            index < pool->indexCount;
+}
+
 // If you lost your pool handle, or more likely, you are working in a multi-
 // threaded application, and you need to attach to a data pool you did not
 // create, you can use this function to retrieve the matching rDB handle.
@@ -983,6 +991,11 @@ void rdb_unlock(rdb_pool_t *pool, const char *parent)
 // printed out. Also calculates tree depth...
 void rdb_dump (rdb_pool_t *pool, int index, char *separator) {
 
+    if (!valid_pool_index(pool, index)) {
+        rdb_error("rdb_dump called with NULL pool or index outside pool's declared range");
+        return;
+    }
+
     if (pool->root[index] == NULL) return;
 
     if ((pool->FLAGS[index] & (RDB_KEYS | RDB_NOKEYS)) != 0)
@@ -1359,6 +1372,7 @@ int rdb_insert (rdb_pool_t *pool, void *data)
 // Only insert one index (asuming this index was removed and updated prior).
 int rdb_insert_one (rdb_pool_t *pool, int index, void *data)
 {
+    if (!valid_pool_index(pool, index)) return -1;
     return _rdb_insert (pool, data, pool->root[index], index, NULL, 0) ;
 }
 
@@ -1477,12 +1491,14 @@ void   *_rdb_get_const (
 // As a special case, if data = null, root node will be returned.
 void   *rdb_get (rdb_pool_t *pool, int idx, const void *data)
 {
+    if (!valid_pool_index(pool, idx)) return NULL;
     debug("Get:pool=%s,idx=%d", pool->name, idx);
     return _rdb_get (pool, idx, data, NULL, 0);
 }
 
 void   *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value)
 {
+    if (!valid_pool_index(pool, idx)) return NULL;
     debug("Get:pool=%s,idx=%d", pool->name, idx);
     return _rdb_get/*_const*/ (pool, idx, &value, NULL, 0);
 }
@@ -1562,6 +1578,8 @@ void   *_rdb_get_neigh (
 // records before and after the lookup record.
 void   *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after)
 {
+    *before = *after = NULL;
+    if (!valid_pool_index(pool, idx)) return NULL;
     return _rdb_get_neigh (pool, idx, data, NULL, 0, before, after);
 }
 
@@ -1855,6 +1873,10 @@ void rdb_iterate(
 
     if (pool == NULL) {
         return rdb_error("rdb_iterate called with NULL pool");
+    }
+
+    if (!valid_pool_index(pool, index)) {
+        return rdb_error("rdb_iterate index outside pool's declared range");
     }
 
     if (pool->root[index] == NULL) {
@@ -2465,6 +2487,7 @@ retest_delete_cond:
 
 void   *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value)
 {
+    if (!valid_pool_index(pool, idx)) return NULL;
     debug("Get:pool=%s,idx=%d", pool->name, idx);
     return rdb_delete (pool, idx, &value); //, NULL, 0);
 }
@@ -2475,6 +2498,8 @@ void   *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value)
 void   *
 rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data)
 {
+
+    if (!valid_pool_index(pool, lookupIndex)) return NULL;
 
     int     indexCount;
     void   *ptr = NULL;                     // NULL to hash the compiler
@@ -2539,6 +2564,7 @@ rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data)
 }
 int rdb_delete_one (rdb_pool_t *pool, int index, void *data)
 {
+    if (!valid_pool_index(pool, index)) return -1;
     return _rdb_delete (pool, index, data, NULL, NULL, 0);
 }
 
@@ -2547,6 +2573,7 @@ int rdb_delete_one (rdb_pool_t *pool, int index, void *data)
 //
 void *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value) {
     void *ptr;
+    if (!valid_pool_index(src_pool, idx)) return NULL;
     ptr = rdb_delete (src_pool, idx, &value);
     if (ptr && rdb_insert (dst_pool, ptr)) return ptr;
     return NULL;
@@ -2554,6 +2581,7 @@ void *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __int
 
 void *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data) {
     void *ptr;
+    if (!valid_pool_index(src_pool, idx)) return NULL;
     ptr = rdb_delete (src_pool, idx, data);
     if (ptr && rdb_insert (dst_pool, ptr)) return ptr;
     return 0;
@@ -2562,6 +2590,7 @@ void *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data)
 // same but slower, with mode debug (not returning a pointer to data)
 int rdb_move2 (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data) {
     void *ptr;
+    if (!valid_pool_index(src_pool, idx)) return -1;
     if ((ptr = rdb_delete (src_pool, idx, data))) {
         if ( dst_pool->indexCount == rdb_insert (dst_pool, ptr)) return 0;
         return -2;

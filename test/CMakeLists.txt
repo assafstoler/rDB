@@ -17,6 +17,7 @@ add_executable(rdb_test rdb_test.c)
 target_link_libraries(rdb_test m)
 
 add_executable(rdb_registration_guard_tests rdb_registration_guard_tests.c)
+add_executable(rdb_index_bounds_tests rdb_index_bounds_tests.c)
 add_executable(rdb_header_consumer_c rdb_header_consumer.c)
 add_executable(rdb_header_consumer_cpp rdb_header_consumer.cpp)
 
@@ -25,6 +26,7 @@ add_executable(rdb_header_consumer_cpp rdb_header_consumer.cpp)
 enable_testing()
 
 add_test (NAME rdb_registration_guard_tests COMMAND rdb_registration_guard_tests)
+add_test (NAME rdb_index_bounds_tests COMMAND rdb_index_bounds_tests)
 add_test (NAME rdb_header_consumer_c COMMAND rdb_header_consumer_c)
 add_test (NAME rdb_header_consumer_cpp COMMAND rdb_header_consumer_cpp)
 

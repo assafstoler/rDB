@@ -284,6 +284,10 @@ void       *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before,
 void        rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
                 void *fn_data, void del_fn(void *, void *), void *del_data);
 void        rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data);
+// Indexed record operations require 0 <= index < pool->indexCount and
+// index < RDB_POOL_MAX_IDX (the source index for moves). Invalid indexes leave
+// records and pool metadata unchanged. Pointer APIs return NULL; insert_one,
+// delete_one and move2 return -1. Iterate and dump report an error and do no work.
 void       *rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data);
 int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
 void       *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value);
