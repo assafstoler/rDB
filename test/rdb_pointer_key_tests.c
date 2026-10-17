@@ -34,11 +34,13 @@ static int collect_record(void *record, void *arg)
 
 int main(void)
 {
-    record_t records[3] = {{0}};
+    record_t records[3] = {0};
     record_t *expected[3];
     void *values[3] = {NULL, NULL, NULL};
 
     rdb_init();
+    void *stored = &records[0];
+    CHECK(key_cmp_ptr(&stored, NULL) == -1);
     values[1] = malloc(1);
     values[2] = malloc(1);
     CHECK(values[1] != NULL && values[2] != NULL);

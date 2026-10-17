@@ -104,6 +104,7 @@ static void test_flag_validation(void)
         {RDB_KINT32, NULL},
         {RDB_BTREE | RDB_KINT32 | RDB_KUINT32, NULL},
         {RDB_BTREE | RDB_KCF, NULL},
+        {RDB_BTREE | RDB_KCFUT, NULL},
         {RDB_BTREE | RDB_KINT32 | RDB_NO_IDX, NULL},
         {RDB_BTREE | RDB_KFIFO, (void *)compare_keys},
         {RDB_BTREE | RDB_KLIFO, (void *)compare_keys},

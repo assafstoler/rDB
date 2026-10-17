@@ -244,6 +244,71 @@ static void test_conflict_aborts_and_flushes_prior(void)
     rdb_flush(pool, NULL, NULL);
 }
 
+typedef struct {
+    int visits;
+    int conflict;
+    int second_result;
+} pending_conflict_state_t;
+
+static int update_pending_keys(void *data, void *opaque,
+        rdb_reindex_ctx_t *ctx)
+{
+    record_t *record = data;
+    record_t candidate = *record;
+    pending_conflict_state_t *state = opaque;
+    ++state->visits;
+    if (record->id == 1)
+        candidate.id = state->conflict ? 10 : 3;
+    else if (record->id == 2)
+        candidate.id = state->conflict ? 10 : 1;
+    else
+        return RDB_CB_OK;
+
+    int result = rdb_reindex_check_apply(ctx, record, &candidate,
+            RDB_INDEX_MASK(0));
+    if (record->id == 2)
+        state->second_result = result;
+    return RDB_CB_OK;
+}
+
+static void test_pending_conflict_and_vacated_key(void)
+{
+    for (int conflict = 0; conflict <= 1; ++conflict) {
+        rdb_pool_t *pool;
+        record_t *one, *two;
+        pending_conflict_state_t state = {0, conflict, 0};
+        reset_rdb(0);
+        pool = make_record_pool();
+        one = new_record(1, "one");
+        two = new_record(2, "two");
+        CHECK(rdb_insert(pool, one) == 2);
+        CHECK(rdb_insert(pool, two) == 2);
+
+        int result = rdb_iterate_reindex(pool, 0, update_pending_keys,
+                &state, NULL, NULL);
+        if (conflict) {
+            /* Neither current key owns 10. The second proposal must detect the
+             * reservation made by the first callback before it is applied. */
+            CHECK(result == RDB_ERR_REINDEX_CONFLICT);
+            CHECK(state.second_result == RDB_ERR_REINDEX_CONFLICT);
+            CHECK(rdb_get_const(pool, 0, 10) == one);
+            CHECK(rdb_get_const(pool, 0, 2) == two);
+            CHECK(rdb_get_const(pool, 0, 1) == NULL);
+        } else {
+            /* A later record may use a key vacated by an earlier accepted
+             * proposal, while all live index links are still unchanged. */
+            CHECK(result == 0);
+            CHECK(state.second_result == 0);
+            CHECK(rdb_get_const(pool, 0, 3) == one);
+            CHECK(rdb_get_const(pool, 0, 1) == two);
+            CHECK(rdb_get_const(pool, 0, 2) == NULL);
+        }
+        CHECK(state.visits == 2);
+        CHECK(rdb_pool_get_fault(pool, NULL) == 0);
+        rdb_flush(pool, NULL, NULL);
+    }
+}
+
 static int change_inline_key(void *data, void *unused, rdb_reindex_ctx_t *ctx)
 {
     inline_record_t *record = data;
@@ -599,6 +664,68 @@ static void test_kcfut_modes(void)
 }
 
 typedef struct {
+    rdb_bpp_t links[3];
+    int32_t id;
+    char *name[2];
+} alias_record_t;
+
+static int rename_alias_indexes(void *data, void *unused,
+        rdb_reindex_ctx_t *ctx)
+{
+    alias_record_t *record = data;
+    alias_record_t candidate = *record;
+    char *first, *second;
+    (void)unused;
+    CHECK(rdb_reindex_kpstr_edit(ctx, record, &candidate, 1, 0, 24,
+                &first) == 0);
+    CHECK(rdb_reindex_kpstr_edit(ctx, record, &candidate, 2, 0, 24,
+                &second) == 0);
+    strcpy(first, "renamed");
+    strcpy(second, "renamed");
+    CHECK(rdb_reindex_check_apply(ctx, record, &candidate,
+                RDB_INDEX_MASK(1) | RDB_INDEX_MASK(2)) == 0);
+    return RDB_CB_OK;
+}
+
+static void test_reindex_shared_old_string(void)
+{
+    int id_offset = (int)(offsetof(alias_record_t, id) - sizeof(rdb_bpp_t) * 3);
+    int first_offset = (int)(offsetof(alias_record_t, name[0]) - sizeof(rdb_bpp_t) * 3);
+    int second_offset = (int)(offsetof(alias_record_t, name[1]) - sizeof(rdb_bpp_t) * 3);
+    rdb_pool_t *pool;
+    alias_record_t *record;
+    reset_rdb(0);
+    pool = rdb_register_um_pool("reindex-shared-old-string", 3, id_offset,
+            RDB_BTREE | RDB_KINT32, NULL, 0);
+    CHECK(pool != NULL);
+    if (!pool) return;
+    CHECK(rdb_register_um_idx(pool, 1, first_offset,
+                RDB_BTREE | RDB_KPSTR, NULL, 0) == 1);
+    CHECK(rdb_register_um_idx(pool, 2, second_offset,
+                RDB_BTREE | RDB_KPSTR, NULL, 0) == 2);
+    record = calloc(1, sizeof(*record));
+    CHECK(record != NULL);
+    if (!record) {
+        rdb_drop_pool(pool);
+        return;
+    }
+    record->id = 1;
+    record->name[0] = strdup("shared");
+    record->name[1] = record->name[0];
+    CHECK(rdb_insert(pool, record) == 3);
+    CHECK(rdb_iterate_reindex(pool, 0, rename_alias_indexes,
+                NULL, NULL, NULL) == 0);
+    CHECK(strcmp(record->name[0], "renamed") == 0);
+    CHECK(strcmp(record->name[1], "renamed") == 0);
+    CHECK(record->name[0] != record->name[1]);
+    CHECK(rdb_get(pool, 1, "shared") == NULL);
+    CHECK(rdb_get(pool, 2, "shared") == NULL);
+    CHECK(rdb_get(pool, 1, "renamed") == record);
+    CHECK(rdb_get(pool, 2, "renamed") == record);
+    rdb_flush(pool, NULL, NULL);
+}
+
+typedef struct {
     int visits;
 } abort_state_t;
 
@@ -749,10 +876,12 @@ int main(void)
     test_unmarked_index_is_rejected();
     test_inline_kstr();
     test_inline_kstr_bounds();
+    test_pending_conflict_and_vacated_key();
     test_kpstr_edit_rejections();
     test_kcf_layout();
     test_kcf_inline_string_layout();
     test_kcf_string_bounds();
+    test_reindex_shared_old_string();
     test_delete_cleanup_owns_kpstr();
     test_kcfut_modes();
     test_abort_applies_prior_changes();

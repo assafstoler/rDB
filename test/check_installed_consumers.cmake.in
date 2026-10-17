@@ -1,0 +1,41 @@
+set(stage "@CMAKE_CURRENT_BINARY_DIR@/installed-consumer-stage")
+file(REMOVE_RECURSE "${stage}")
+execute_process(COMMAND "@CMAKE_COMMAND@" -E env "DESTDIR=${stage}"
+        "@CMAKE_COMMAND@" "-DCMAKE_INSTALL_CONFIG_NAME=@CMAKE_BUILD_TYPE@"
+        -P "@CMAKE_BINARY_DIR@/cmake_install.cmake"
+    RESULT_VARIABLE install_result OUTPUT_VARIABLE install_output ERROR_VARIABLE install_error)
+if(NOT install_result STREQUAL "0")
+    message(FATAL_ERROR "Install staging failed (${install_result}):\n${install_output}\n${install_error}")
+endif()
+
+set(include_dir "${stage}@CMAKE_INSTALL_PREFIX@/include/rdb")
+set(library_dir "${stage}@CMAKE_INSTALL_PREFIX@/@INSTALL_LIB_DIR@")
+if(NOT EXISTS "${include_dir}/rdb.h" OR NOT EXISTS "${include_dir}/rdb_build_config.h")
+    message(FATAL_ERROR "Installed public headers are missing from ${include_dir}")
+endif()
+if(NOT EXISTS "${library_dir}/librdb.so")
+    message(FATAL_ERROR "Installed shared-library link is missing from ${library_dir}")
+endif()
+
+function(check_command)
+    execute_process(COMMAND ${ARGV} RESULT_VARIABLE result
+        OUTPUT_VARIABLE output ERROR_VARIABLE errors)
+    if(NOT result STREQUAL "0")
+        message(FATAL_ERROR "Command failed (${result}): ${ARGV}\n${output}\n${errors}")
+    endif()
+endfunction()
+
+set(build_dir "@CMAKE_CURRENT_BINARY_DIR@/installed-consumer-build")
+file(MAKE_DIRECTORY "${build_dir}")
+check_command("@CMAKE_C_COMPILER@" -std=c11 -Wall -Wextra -Werror
+    "-I${include_dir}" "@CMAKE_CURRENT_SOURCE_DIR@/rdb_installed_consumer.c"
+    "-L${library_dir}" "-Wl,-rpath,${library_dir}" -lrdb -pthread
+    -o "${build_dir}/consumer-c")
+check_command("@CMAKE_CXX_COMPILER@" -std=c++14 -Wall -Wextra -Werror
+    "-I${include_dir}" "@CMAKE_CURRENT_SOURCE_DIR@/rdb_installed_consumer.cpp"
+    "-L${library_dir}" "-Wl,-rpath,${library_dir}" -lrdb -pthread
+    -o "${build_dir}/consumer-cpp")
+check_command("@CMAKE_COMMAND@" -E env "LD_LIBRARY_PATH=${library_dir}"
+    "${build_dir}/consumer-c")
+check_command("@CMAKE_COMMAND@" -E env "LD_LIBRARY_PATH=${library_dir}"
+    "${build_dir}/consumer-cpp")
