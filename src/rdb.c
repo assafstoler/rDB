@@ -1233,7 +1233,7 @@ void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start)
 int rdb_lock(rdb_pool_t *pool, const char *parent) 
 {
 #ifdef RDB_LOCK_DEBUG
-    info("RDBL    %s by %s\n", pool->name, parent);
+    rdb_info("RDBL    %s by %s\n", pool->name, parent);
 #endif
     return rdb_sem_lock(&pool->write_mutex);
 }
@@ -1241,7 +1241,7 @@ int rdb_lock(rdb_pool_t *pool, const char *parent)
 void rdb_unlock(rdb_pool_t *pool, const char *parent) 
 {
 #ifdef RDB_LOCK_DEBUG
-    info("RDb-UL %s - %s\n", pool->name, parent);
+    rdb_info("RDb-UL %s - %s\n", pool->name, parent);
 #endif
     rdb_sem_unlock(&pool->write_mutex);
     return ;

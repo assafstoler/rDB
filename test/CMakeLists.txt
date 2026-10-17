@@ -37,6 +37,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
     set_property(TARGET rdb_stats_no_counters_tests PROPERTY LINK_LIBRARIES pthread)
     set_property(TARGET rdb_stats_no_counters_tests APPEND_STRING PROPERTY COMPILE_FLAGS
         " -URDB_POOL_COUNTERS")
+
+    add_executable(rdb_lock_debug_tests rdb_lock_debug_tests.c
+        "${CMAKE_SOURCE_DIR}/src/rdb.c")
+    set_property(TARGET rdb_lock_debug_tests PROPERTY LINK_LIBRARIES pthread)
+    set_property(TARGET rdb_lock_debug_tests APPEND_STRING PROPERTY COMPILE_FLAGS
+        " -DRDB_LOCK_DEBUG")
 endif()
 
 #install(TARGETS rdb_test DESTINATION test)
@@ -56,6 +62,9 @@ if(TARGET rdb_mutex_init_tests)
 endif()
 if(TARGET rdb_stats_no_counters_tests)
     add_test (NAME rdb_stats_no_counters_tests COMMAND rdb_stats_no_counters_tests)
+endif()
+if(TARGET rdb_lock_debug_tests)
+    add_test (NAME rdb_lock_debug_tests COMMAND rdb_lock_debug_tests)
 endif()
 
 add_test (rdb_test_init_clean rdb_test -t1)
