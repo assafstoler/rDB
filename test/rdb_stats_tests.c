@@ -110,6 +110,27 @@ int main(void)
 #endif
     check_report_sizes(expected);
 
+#ifdef RDB_POOL_COUNTERS
+    {
+        const uint32_t counts[] = {
+            0, INT32_MAX, UINT32_C(2147483648), UINT32_MAX
+        };
+        const char *count_text[] = {
+            "0", "2147483647", "2147483648", "4294967295"
+        };
+        for (size_t i = 0; i < sizeof(counts) / sizeof(counts[0]); ++i) {
+            long_pool->record_count = counts[i];
+            CHECK(snprintf(expected, sizeof(expected),
+                        "Pool: %s : %s\nPool: stats-middle : 1\n"
+                        "Pool: stats-short : 0\n:END:",
+                        long_name, count_text[i]) < (int)sizeof(expected));
+            check_report_sizes(expected);
+            CHECK(long_pool->record_count == counts[i]);
+        }
+        long_pool->record_count = 1;
+    }
+#endif
+
     rdb_clean(0);
     free(short_record);
     free(long_record);

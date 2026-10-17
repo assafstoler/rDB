@@ -351,8 +351,8 @@ char * rdb_print_pool_stats (char *buf, int max_len)
         pool = pool_root;
 
         while (pool != NULL) {
-            rc = snprintf(buf + used, max_len - used, "Pool: %s : %d\n",
-                    pool->name, pool->record_count );
+            rc = snprintf(buf + used, max_len - used, "Pool: %s : %u\n",
+                    pool->name, (unsigned)pool->record_count );
             if ( rc > 0 ) {
                 // snprintf returns the required length, not the bytes that fit.
                 if (rc >= max_len - used) {
