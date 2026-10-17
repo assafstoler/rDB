@@ -537,10 +537,8 @@ void rdb_drop_pool (rdb_pool_t *pool) {
     pthread_mutex_destroy(&pool->write_mutex);
 #endif
 
-    if (pool->name) {
-        //info ("freeing %s\n", pool->name);
-        rdb_free (pool->name);
-    }
+    // The entry guard above guarantees both pool and its name are non-NULL.
+    rdb_free(pool->name);
 
     private_data = pool->private_data;
     if (private_data) {
@@ -550,10 +548,7 @@ void rdb_drop_pool (rdb_pool_t *pool) {
         rdb_free(private_data);
     }
 
-    if (pool) {
-        rdb_free(pool) ;
-        pool = NULL;
-    }
+    rdb_free(pool);
 
     rdb_sem_unlock(&reg_mutex);
     return;
@@ -728,9 +723,6 @@ void rdb_clean(int gc) {
         rdb_free (rdb_error_string);
         rdb_error_string = NULL;
     }
-
-    if (!gc)
-        pool_root = NULL;
 
     return ;
 }
