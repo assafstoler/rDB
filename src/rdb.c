@@ -1946,7 +1946,8 @@ int _rdb_iterate (
                 }
                 else if ( rc & RDBFE_NODE_FIND_NEXT ) {
                     *resumePtr = dataHead;
-                    return rc - 8 ; //(leave abort status in if exist)
+                    // Finding a successor is a restart, not normal completion.
+                    return (rc & ~RDBFE_NODE_FIND_NEXT) | RDBFE_NODE_RESUME_ON;
                 }
                 else if (rc > 1) return rc;
             }
@@ -1962,7 +1963,8 @@ int _rdb_iterate (
                 }
                 else if ( rc & RDBFE_NODE_FIND_NEXT ) {
                     *resumePtr = dataHead;
-                    return rc - 8 ; //
+                    // Preserve an explicit abort while requesting the restart.
+                    return (rc & ~RDBFE_NODE_FIND_NEXT) | RDBFE_NODE_RESUME_ON;
                 }
                 else if (rc > 1) return rc;
             }

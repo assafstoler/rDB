@@ -331,6 +331,8 @@ void       *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value);
 // before/after must point to writable pointer variables; both are always assigned.
 // Missing neighbors, exact matches and data == NULL (select root) use NULL outputs.
 void       *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after);
+// Returning RDB_CB_DELETE_NODE removes the current record and continues in
+// order; RDB_CB_DELETE_NODE_AND_ABORT removes it and then stops iteration.
 void        rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
                 void *fn_data, void del_fn(void *, void *), void *del_data);
 typedef int (*rdb_iterate_reindex_fn)(void *record, void *user_data,
