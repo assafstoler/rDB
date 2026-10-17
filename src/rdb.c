@@ -1818,8 +1818,6 @@ void   *_rdb_get_neigh (
 
         if (pool->root[index] == NULL) {
             debug("GetFail\n");
-            before = NULL;
-            after = NULL;
             return (NULL);
         }
         else {
@@ -1827,8 +1825,6 @@ void   *_rdb_get_neigh (
 
             if (data == NULL ) {
                 debug("GetFail???\n");
-                before = NULL;
-                after = NULL;
                 return (dataHead);              // special case, return root node
             }
 

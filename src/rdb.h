@@ -319,6 +319,9 @@ int         rdb_insert_one (rdb_pool_t *pool, int index, void *data);
 // A key whose value is NULL is queried with &key; data == NULL selects the root.
 void       *rdb_get (rdb_pool_t *pool, int idx, const void *data);
 void       *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value);
+// Tree lookup: on a miss, return NULL and the closest lower/higher records.
+// before/after must point to writable pointer variables; both are always assigned.
+// Missing neighbors, exact matches and data == NULL (select root) use NULL outputs.
 void       *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after);
 void        rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
                 void *fn_data, void del_fn(void *, void *), void *del_data);

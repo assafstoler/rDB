@@ -220,11 +220,25 @@ static void test_valid_boundaries(void)
         for (size_t n = 0; n < sizeof(valid) / sizeof(valid[0]); ++n) {
             const int index = valid[n];
             void *before = record, *after = record;
+            int32_t lower_key = record->key - 1;
+            int32_t upper_key = record->key + 1;
             CHECK(rdb_get(pool, index, &record->key) == record);
             CHECK(rdb_get_const(pool, index, record->key) == record);
             CHECK(rdb_get_neigh(pool, index, &record->key, &before, &after) == record);
             CHECK(before == NULL && after == NULL);
+            before = after = record;
+            CHECK(rdb_get_neigh(pool, index, &lower_key, &before, &after) == NULL);
+            CHECK(before == NULL && after == record);
+            before = after = record;
+            CHECK(rdb_get_neigh(pool, index, &upper_key, &before, &after) == NULL);
+            CHECK(before == record && after == NULL);
+            before = after = record;
+            CHECK(rdb_get_neigh(pool, index, NULL, &before, &after) == record);
+            CHECK(before == NULL && after == NULL);
             CHECK(rdb_delete_one(pool, index, record) >= 0);
+            before = after = record;
+            CHECK(rdb_get_neigh(pool, index, &record->key, &before, &after) == NULL);
+            CHECK(before == NULL && after == NULL);
             CHECK(rdb_get(pool, index, &record->key) == NULL);
             CHECK(rdb_insert_one(pool, index, record) >= 0);
             CHECK(rdb_get(pool, index, &record->key) == record);
