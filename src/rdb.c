@@ -344,6 +344,20 @@ static char *pool_stats_truncated(char *buf, int max_len)
     return buf;
 }
 
+#ifdef RDB_POOL_COUNTERS
+// Record writers remain serialized by the caller's pool lock. Relaxed loads
+// and stores let reporting sample counters without taking that lock.
+static inline uint32_t pool_count(const rdb_pool_t *pool)
+{
+    return __atomic_load_n(&pool->record_count, __ATOMIC_RELAXED);
+}
+
+static inline void pool_count_set(rdb_pool_t *pool, uint32_t count)
+{
+    __atomic_store_n(&pool->record_count, count, __ATOMIC_RELAXED);
+}
+#endif
+
 char * rdb_print_pool_stats (char *buf, int max_len)
 {
     if (!buf || max_len <= 0) {
@@ -354,29 +368,32 @@ char * rdb_print_pool_stats (char *buf, int max_len)
     int rc;
     
 #ifdef RDB_POOL_COUNTERS
+    int truncated = 0, format_failed = 0;
     rdb_pool_t *pool;
 
-    if (pool_root != NULL) {
-        pool = pool_root;
-
-        while (pool != NULL) {
-            rc = snprintf(buf + used, max_len - used, "Pool: %s : %u\n",
-                    pool->name, (unsigned)pool->record_count );
-            if ( rc > 0 ) {
-                // snprintf returns the required length, not the bytes that fit.
-                if (rc >= max_len - used) {
-                    return pool_stats_truncated(buf, max_len);
-                }
-                used += rc;
-            } 
-            else {
-                rdb_error("Failure during error print\n");
-                break;
-            }
-
-            pool = pool->next;
+    // Registry locking keeps pool names and links alive. Do not take pool
+    // locks here: callers may already hold one while requesting statistics.
+    rdb_sem_lock(&reg_mutex);
+    for (pool = pool_root; pool; pool = pool->next) {
+        rc = snprintf(buf + used, max_len - used, "Pool: %s : %u\n",
+                pool->name, (unsigned)pool_count(pool));
+        if (rc <= 0) {
+            format_failed = 1;
+            break;
         }
+        // snprintf returns the required length, not the bytes that fit.
+        if (rc >= max_len - used) {
+            truncated = 1;
+            break;
+        }
+        used += rc;
     }
+    rdb_sem_unlock(&reg_mutex);
+    if (truncated)
+        return pool_stats_truncated(buf, max_len);
+    // Error reporting may allocate; do it after releasing the registry lock.
+    if (format_failed)
+        rdb_error("Failure during error print\n");
     rc = snprintf(buf + used, max_len - used, ":END:");
 #else
     rc = snprintf(buf + used, max_len - used,
@@ -1637,7 +1654,7 @@ int rdb_insert (rdb_pool_t *pool, void *data)
         return 0;
     }
 #ifdef RDB_POOL_COUNTERS
-    pool->record_count++;
+    pool_count_set(pool, pool_count(pool) + 1);
 #endif
     return pool->indexCount;
 }
@@ -2947,7 +2964,7 @@ void rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data)
             pool->root[cnt] = NULL;
 
 #ifdef RDB_POOL_COUNTERS
-    pool->record_count = 0;
+    pool_count_set(pool, 0);
 #endif
 
 }
@@ -3437,7 +3454,7 @@ static int unlink_record(rdb_pool_t *pool, void *record, PP_T *queue_links,
                     "record could not be removed from every index");
     }
 #ifdef RDB_POOL_COUNTERS
-    pool->record_count--;
+    pool_count_set(pool, pool_count(pool) - 1);
 #endif
     return 0;
 }

@@ -272,7 +272,8 @@ typedef struct RDB_POOLS {
     pthread_mutex_t read_mutex;
 #endif
     //   rdb_index_data_t**  index_data;             ///< index data master containder - dynamic
-    // Always present so RDB_POOL_COUNTERS does not change the public layout.
+    // Library-maintained. Direct reads require normal pool synchronization;
+    // rdb_print_pool_stats can sample it safely while record writers run.
     uint32_t        record_count;
     // Zero until a consistency failure is recorded.
     rdb_fault_info_t fault;
@@ -371,6 +372,9 @@ void        rdb_print_pools(void *fp);
 // Return buf; max_len includes the terminating NUL. Truncated reports end with
 // "..." (fewer dots if the buffer cannot hold three dots and a NUL).
 // A NULL buffer or nonpositive max_len causes no writes.
+// Safe alongside normally locked record updates and pool registration/drop.
+// Uses only the registry lock; counts are sampled individually, not as a
+// simultaneous snapshot. Coordinate initialization and global cleanup as usual.
 char       *rdb_print_pool_stats (char *buf, int max_len);
 
 //void        _rdb_dump (rdb_pool_t *, int index, void *start);
