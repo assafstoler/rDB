@@ -67,6 +67,21 @@ seed selects one run unless `--seeds` is also supplied. Invalid options return
 usage status 2. The stress target is an opt-in correctness check, outside the
 default CTest run; it does not impose timing thresholds.
 
+The companion-index iteration tests explicitly unlink/edit/reinsert other
+indexes inside ordinary `rdb_iterate` callbacks while keeping the active
+index and key fixed. They traverse numeric, pointer-string, FIFO and LIFO
+indexes across every index position, five insertion orders, all 128 deletion
+masks, three reindex masks, keys moving earlier/later, and default/custom
+cleanup. Empty and singleton pools are included. Separate cases exercise
+both abort results at every visit position and duplicate-key rejection
+followed by restoring and reinserting the original key.
+
+Independent copied keys and queue IDs check exact visits, lookups, AVL balance,
+queue links/endpoints, unchanged active-index links, and counts. Cleanup must
+run exactly once after all indexes exclude the record and rDB has cleared
+its indexed string. The six cases have 30-second timeouts and run with
+`ctest --test-dir build -L iterate_companion --output-on-failure`.
+
 Install to a staging directory without changing system libraries:
 
 ```sh
