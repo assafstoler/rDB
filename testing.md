@@ -37,6 +37,23 @@ state after joining all workers. Both cases use always-enabled checks and
 have 30-second watchdogs; neither asserts an execution-time threshold. Run
 them with `ctest --test-dir build -L move --output-on-failure`.
 
+The move contract tests add 12 cases for all three move APIs with caller-held
+pool locks. They exercise repeated rejection at each keyed destination index,
+head/middle/tail selection, FIFO/LIFO head moves, same-pool moves, missing and
+invalid destinations, and successful retry after removing a collision. Typed
+collisions cover inline strings, separately allocated pointer strings, pointer
+values and custom composite keys. String cases reject after both destination
+queues have accepted the record and check that key storage survives rollback.
+
+Saved traversal order and counts check both pools after rejection; queue checks
+also validate heads, tails and reciprocal links. The fixtures deliberately
+inject a late comparator rejection or invalid destination metadata to exercise
+defensive paths; real callers must keep keys and comparators stable. A separate
+comparison-budget case requires successful moves to use the same number of key
+comparisons as a direct delete followed by insert, with no timing threshold.
+All checks remain enabled in Release, and each case has a 30-second timeout.
+Run these cases with `ctest --test-dir build -L move_contract --output-on-failure`.
+
 The mixed-operation model tests extend the existing numeric model with seven
 tree/FIFO/LIFO layouts, numeric and string keys, all applicable move APIs,
 single-index reindexing, rejected operations, selective/aborted iteration,

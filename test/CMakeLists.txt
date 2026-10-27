@@ -31,6 +31,8 @@ add_executable(rdb_pointer_key_tests rdb_pointer_key_tests.c)
 add_executable(rdb_const_tests rdb_const_tests.c)
 add_executable(rdb_const_matrix_tests rdb_const_matrix_tests.c)
 add_executable(rdb_move_matrix_tests rdb_move_matrix_tests.c)
+add_executable(rdb_move_contract_tests rdb_move_contract_tests.c)
+target_compile_options(rdb_move_contract_tests PRIVATE -Wall -Wextra -Werror)
 add_executable(rdb_model_tests rdb_model_tests.c)
 add_executable(rdb_mixed_model_tests rdb_mixed_model_tests.c)
 target_compile_options(rdb_mixed_model_tests PRIVATE -Wall -Wextra -Werror)
@@ -141,6 +143,13 @@ add_test (NAME rdb_pointer_key_tests COMMAND rdb_pointer_key_tests)
 add_test (NAME rdb_const_tests COMMAND rdb_const_tests)
 add_test (NAME rdb_const_matrix_tests COMMAND rdb_const_matrix_tests)
 add_test (NAME rdb_move_matrix_tests COMMAND rdb_move_matrix_tests)
+foreach(case collision_pointer collision_constant collision_status late_rejection
+        queue_heads same_pool unconfigured_destination null_destination typed_keys
+        comparison_budget fifo_lifo_inline_string fifo_lifo_pointer_string)
+    add_test(NAME rdb_move_contract_${case} COMMAND rdb_move_contract_tests ${case})
+    set_tests_properties(rdb_move_contract_${case} PROPERTIES
+        TIMEOUT 30 LABELS "rdb;move;move_contract")
+endforeach()
 add_test (NAME rdb_model_tests COMMAND rdb_model_tests)
 foreach(case trees tree_fifo_lifo tree_lifo_fifo fifo_tree_lifo lifo_tree_fifo
         fifo_lifo_tree lifo_fifo_tree inline_strings pointer_strings)
