@@ -68,6 +68,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
     add_executable(rdb_shared_pool_thread_tests rdb_shared_pool_thread_tests.c)
     target_link_libraries(rdb_shared_pool_thread_tests pthread)
 
+    add_executable(rdb_move_layout_tests rdb_move_layout_tests.c)
+    target_link_libraries(rdb_move_layout_tests pthread)
+    target_compile_options(rdb_move_layout_tests PRIVATE -Wall -Wextra -Werror)
+
     add_executable(rdb_error_tests rdb_error_tests.c
         "${CMAKE_SOURCE_DIR}/src/rdb.c")
     set_property(TARGET rdb_error_tests PROPERTY LINK_LIBRARIES pthread)
@@ -151,6 +155,13 @@ if(TARGET rdb_stats_concurrency_tests)
 endif()
 if(TARGET rdb_shared_pool_thread_tests)
     add_test (NAME rdb_shared_pool_thread_tests COMMAND rdb_shared_pool_thread_tests)
+endif()
+if(TARGET rdb_move_layout_tests)
+    foreach(case matrix threaded)
+        add_test(NAME rdb_move_layout_${case} COMMAND rdb_move_layout_tests ${case})
+        set_tests_properties(rdb_move_layout_${case} PROPERTIES
+            TIMEOUT 30 LABELS "rdb;move")
+    endforeach()
 endif()
 if(TARGET rdb_error_tests)
     add_test (NAME rdb_error_tests COMMAND rdb_error_tests)

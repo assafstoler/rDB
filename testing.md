@@ -22,6 +22,21 @@ stderr output and signal termination. Run these cases with
 timeout. The fixtures release their records, strings and pools so leak
 detection can remain enabled.
 
+The Linux move-layout tests add two independent regression cases. The matrix
+covers 256 source/destination pairs with 1, 2, 3 and the maximum supported
+number of indexes (currently 24), using tree, FIFO, LIFO and mixed layouts.
+A fixed seed drives 128 attempts per pair through all three move APIs,
+including same-pool moves, missing destinations and late key collisions.
+An independent model checks membership, counts, exact queue links/order and
+AVL ordering/balance after each attempt.
+
+The threaded case performs 32,000 moves across eight threads, locking both
+pools in a consistent order. It checks membership and counts on each move,
+samples the complete model while holding both locks, and validates the final
+state after joining all workers. Both cases use always-enabled checks and
+have 30-second watchdogs; neither asserts an execution-time threshold. Run
+them with `ctest --test-dir build -L move --output-on-failure`.
+
 Install to a staging directory without changing system libraries:
 
 ```sh
