@@ -987,7 +987,8 @@ int key_cmp_const_str_p (char **old, char *new)
 {
     return strcmp ( new, *old);
 }
-void set_pointers (
+// Internal helper: keep record/header address calculation inline in tree walks.
+static inline void set_pointers (
         rdb_pool_t *pool, 
         int index, 
         void *start, 
@@ -1565,62 +1566,43 @@ int rdb_insert_one (rdb_pool_t *pool, int index, void *data)
     return _rdb_insert (pool, data, pool->root[index], index, NULL, 0) ;
 }
 
-void   *_rdb_get (
-        rdb_pool_t  *pool,
-        int         index,
-        const void  *data,
-        void        *start) {
-
-    PP_T   *ppk;
-    int     rc;
-    void   *dataHead;
-
-    if ((pool->FLAGS[index] & RDB_BTREE) == RDB_BTREE) {
-
-        if (pool->root[index] == NULL) {
-            debug("GetFail - pool=%s, Null rool node\n",pool->name);
-            return (NULL);
-        } else {
-            if (pool->FLAGS[index] & (RDB_NOKEYS)) {
-                return pool->root[index];
-
-            }
-            set_pointers (pool, index, start, &ppk, &dataHead);
-
-            if (data == NULL ) {
-                debug("GetFail???\n");
-                return (dataHead);          // special case, return root node
-            }
-
-            if ((rc = pool->get_fn[index] (dataHead + pool->key_offset[index],
-                    (void *) data)) < 0) {
-                // left side
-
-                debug("Left Get\n");
-
-                if (ppk->left == NULL) {
-                    return (NULL);
-                }
-                else
-                    return (_rdb_get (pool, index, data, ppk->left));
-            } else if (rc > 0) {
-                //i right side
-
-                debug("Right Get\n");
-
-                if (ppk->right == NULL) {
-                    return (NULL);
-                }
-                else
-                    return (_rdb_get (pool, index, data, ppk->right));
-            }
-            else {
-                debug("Get:Done\n");
-                return (dataHead);              
-            }
-        }
+void *_rdb_get(rdb_pool_t *pool, int index, const void *data, void *start)
+{
+    const uint32_t flags = pool->FLAGS[index];
+    if ((flags & RDB_BTREE) != RDB_BTREE || !pool->root[index]) return NULL;
+    // Queues ignore the query; NULL queries on trees select the starting node.
+    if (flags & RDB_NOKEYS) return pool->root[index];
+    void *record = start ? start : (void *)pool->root[index];
+    if (!data) return record;
+    // Pool layout and indexed keys remain stable for the duration of a lookup.
+    const size_t key_offset = pool->key_offset[index];
+    const size_t link_offset = sizeof(PP_T) * index;
+    int32_t (*compare)() = pool->get_fn[index];
+    // Match the comparator, not the type flag: callers may override built-ins.
+    // Comparing inline avoids an indirect call at every level of this tree.
+#define LOOKUP_SCALAR(type, comparator) \
+    if (compare == comparator) { \
+        const type query = *(const type *)data; \
+        while (record) { \
+            PP_T *link = (PP_T *)((char *)record + link_offset); \
+            const type key = *(const type *)((char *)record + key_offset); \
+            if (query == key) return record; \
+            record = query < key ? link->left : link->right; \
+        } \
+        return NULL; \
     }
-    return NULL;                                //should never get here
+    LOOKUP_SCALAR(uint64_t, key_cmp_uint64)
+    LOOKUP_SCALAR(int64_t, key_cmp_int64)
+    LOOKUP_SCALAR(uint32_t, key_cmp_uint32)
+    LOOKUP_SCALAR(int32_t, key_cmp_int32)
+#undef LOOKUP_SCALAR
+    while (record) {
+        PP_T *link = (PP_T *)((char *)record + link_offset);
+        int rc = compare((char *)record + key_offset, (void *)data);
+        if (!rc) return record;
+        record = rc < 0 ? link->left : link->right;
+    }
+    return NULL;
 }
 
 // Find requested data set and return a pointer to it

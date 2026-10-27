@@ -140,8 +140,11 @@ static void get_range(void) { numeric_ranges(GET_VALUE); }
 static void delete_range(void) { numeric_ranges(DELETE_VALUE); }
 static void move_range(void) { numeric_ranges(MOVE_VALUE); }
 
+static unsigned wide_comparisons;
+
 static int compare_wide_value(const void *old_key, const void *new_key)
 {
+    ++wide_comparisons;
     __intmax_t old_value, new_value;
     memcpy(&old_value, old_key, sizeof(old_value));
     memcpy(&new_value, new_key, sizeof(new_value));
@@ -149,10 +152,12 @@ static int compare_wide_value(const void *old_key, const void *new_key)
 }
 
 /* A supplied comparator, even with a built-in type flag, owns the key format.
- * Do not narrow its query or change the address-of-full-value convention. */
+ * Do not narrow its query or change the address-of-full-value convention.
+ * Even an exact scalar hit must call the override rather than the fast path. */
 static void custom(void)
 {
-    const int flags[] = {RDB_KCF, RDB_KUINT8};
+    const int flags[] = {RDB_KCF, RDB_KUINT8, RDB_KUINT64, RDB_KINT64,
+                         RDB_KUINT32, RDB_KINT32};
     for (size_t flag = 0; flag < ARRAY_COUNT(flags); ++flag)
         for (int operation = GET_VALUE; operation <= MOVE_VALUE; ++operation)
             for (int index = 0; index < 2; ++index) {
@@ -162,9 +167,13 @@ static void custom(void)
                 __intmax_t value = 257;
                 memcpy(&item->key, &value, sizeof(value));
                 CHECK(rdb_insert(source, item) == 2);
+                wide_comparisons = 0;
                 CHECK(value_query(operation, source, destination, index, 1) == NULL);
+                CHECK(wide_comparisons > 0);
                 CHECK(source->record_count == 1 && destination->record_count == 0);
+                wide_comparisons = 0;
                 CHECK(value_query(operation, source, destination, index, value) == item);
+                CHECK(wide_comparisons > 0);
                 CHECK(source->record_count == (operation == GET_VALUE ? 1u : 0u));
                 CHECK(destination->record_count == (operation == MOVE_VALUE ? 1u : 0u));
                 if (operation == DELETE_VALUE) free(item);
