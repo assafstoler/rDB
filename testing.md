@@ -37,6 +37,36 @@ state after joining all workers. Both cases use always-enabled checks and
 have 30-second watchdogs; neither asserts an execution-time threshold. Run
 them with `ctest --test-dir build -L move --output-on-failure`.
 
+The mixed-operation model tests extend the existing numeric model with seven
+tree/FIFO/LIFO layouts, numeric and string keys, all applicable move APIs,
+single-index reindexing, rejected operations, selective/aborted iteration,
+and flush/reuse across two pools. Defaults are four fixed seeds, a 32-record
+capacity and 1,200 steps per seed. The inline-string and pointer-string cases
+each repeat all seven layouts; their all-tree layout mixes numeric, inline
+and pointer-string keys.
+
+After each step, independent copied keys and queues determine the expected
+membership, counts, traversal order, link directions and AVL balance. The
+tests also check allocation/cleanup counts and that iteration/flush clear
+indexed pointer strings before invoking cleanup. Each default case runs in
+a separate process with a 30-second timeout and checks enabled in Release.
+Run them with `ctest --test-dir build -L model --output-on-failure`.
+
+Failures print the seed, layout, step, last 16 operations and a replay command.
+For longer runs or a specific replay:
+
+```sh
+# All numeric/string layouts: eight seeds, 128-record capacity, 5,000 steps.
+cmake --build build --target model_stress
+build/test/rdb_mixed_model_tests pointer_strings --seed 0x1dba5eed --items 128 --steps 5000
+```
+
+Cases accept `--seed` (1..4294967295), `--seeds` (1..4096), `--items` (1..512)
+and `--steps` (1..1000000), using decimal or hexadecimal values. An explicit
+seed selects one run unless `--seeds` is also supplied. Invalid options return
+usage status 2. The stress target is an opt-in correctness check, outside the
+default CTest run; it does not impose timing thresholds.
+
 Install to a staging directory without changing system libraries:
 
 ```sh

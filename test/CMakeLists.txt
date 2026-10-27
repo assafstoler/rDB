@@ -32,6 +32,8 @@ add_executable(rdb_const_tests rdb_const_tests.c)
 add_executable(rdb_const_matrix_tests rdb_const_matrix_tests.c)
 add_executable(rdb_move_matrix_tests rdb_move_matrix_tests.c)
 add_executable(rdb_model_tests rdb_model_tests.c)
+add_executable(rdb_mixed_model_tests rdb_mixed_model_tests.c)
+target_compile_options(rdb_mixed_model_tests PRIVATE -Wall -Wextra -Werror)
 add_executable(rdb_string_neighbor_tests rdb_string_neighbor_tests.c)
 add_executable(rdb_inline_string_tests rdb_inline_string_tests.c)
 add_executable(rdb_string_cleanup_tests rdb_string_cleanup_tests.c)
@@ -131,6 +133,24 @@ add_test (NAME rdb_const_tests COMMAND rdb_const_tests)
 add_test (NAME rdb_const_matrix_tests COMMAND rdb_const_matrix_tests)
 add_test (NAME rdb_move_matrix_tests COMMAND rdb_move_matrix_tests)
 add_test (NAME rdb_model_tests COMMAND rdb_model_tests)
+foreach(case trees tree_fifo_lifo tree_lifo_fifo fifo_tree_lifo lifo_tree_fifo
+        fifo_lifo_tree lifo_fifo_tree inline_strings pointer_strings)
+    add_test(NAME rdb_mixed_model_${case} COMMAND rdb_mixed_model_tests ${case})
+    set_tests_properties(rdb_mixed_model_${case} PROPERTIES
+        TIMEOUT 30 LABELS "rdb;model")
+endforeach()
+add_test(NAME rdb_mixed_model_replay COMMAND rdb_mixed_model_tests
+    stress --seed 0x17 --seeds 2 --items 8 --steps 200)
+add_test(NAME rdb_mixed_model_options COMMAND "${CMAKE_COMMAND}"
+    "-DMODEL=$<TARGET_FILE:rdb_mixed_model_tests>"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_model_options.cmake")
+set_tests_properties(rdb_mixed_model_replay rdb_mixed_model_options PROPERTIES
+    TIMEOUT 30 LABELS "rdb;model")
+# Longer correctness sequences are opt-in and have no timing assertions.
+add_custom_target(model_stress
+    COMMAND $<TARGET_FILE:rdb_mixed_model_tests> stress
+        --seed 0x243f6a88 --seeds 8 --items 128 --steps 5000
+    DEPENDS rdb_mixed_model_tests USES_TERMINAL)
 add_test (NAME rdb_string_neighbor_tests COMMAND rdb_string_neighbor_tests)
 add_test (NAME rdb_inline_string_tests COMMAND rdb_inline_string_tests)
 add_test (NAME rdb_string_cleanup_tests COMMAND rdb_string_cleanup_tests)

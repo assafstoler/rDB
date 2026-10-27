@@ -1,0 +1,20 @@
+# A malformed command must return the intentional usage status, not crash.
+function(reject option value expected)
+    execute_process(COMMAND "${MODEL}" trees "${option}" "${value}"
+        RESULT_VARIABLE status OUTPUT_VARIABLE out ERROR_VARIABLE err)
+    if(NOT "${status}" STREQUAL "2" OR NOT err MATCHES "${expected}")
+        message(FATAL_ERROR "Wrong rejection for ${option} ${value}: ${status}\n${out}\n${err}")
+    endif()
+endfunction()
+reject(--seed 0 "Invalid positive integer")
+reject(--seed nope "Invalid positive integer")
+reject(--seed 4294967296 "Invalid positive integer")
+reject(--items 513 "Invalid option/range")
+reject(--steps 1000001 "Invalid option/range")
+reject(--seeds 4097 "Invalid option/range")
+reject(--unknown 1 "Invalid option/range")
+execute_process(COMMAND "${MODEL}" trees --seed
+    RESULT_VARIABLE status OUTPUT_VARIABLE out ERROR_VARIABLE err)
+if(NOT "${status}" STREQUAL "2" OR NOT err MATCHES "Expected a positive integer")
+    message(FATAL_ERROR "Missing argument not rejected correctly: ${status} ${out} ${err}")
+endif()
