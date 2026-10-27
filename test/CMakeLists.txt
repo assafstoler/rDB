@@ -49,8 +49,26 @@ target_compile_options(rdb_iterate_companion_tests PRIVATE -Wall -Wextra -Werror
 add_executable(rdb_dump_thread_tests rdb_dump_thread_tests.c)
 target_link_libraries(rdb_dump_thread_tests pthread)
 add_executable(rdb_dump_tests rdb_dump_tests.c)
-add_executable(rdb_header_consumer_c rdb_header_consumer.c)
-add_executable(rdb_header_consumer_cpp rdb_header_consumer.cpp)
+if(RDB_BUILD_HAS_INT128)
+    set(rdb_test_value_bytes 16)
+else()
+    set(rdb_test_value_bytes 8)
+endif()
+foreach(language c cpp)
+    foreach(suffix "" "_debug")
+        set(consumer rdb_header_consumer_${language}${suffix})
+        add_executable(${consumer} rdb_header_consumer.${language})
+        target_compile_options(${consumer} PRIVATE -Wall -Wextra -Werror -UDEBUG)
+        if(suffix STREQUAL "_debug")
+            target_compile_options(${consumer} PRIVATE -DDEBUG)
+        endif()
+    endforeach()
+    add_executable(rdb_const_consumer_${language} rdb_const_consumer.${language})
+    target_compile_options(rdb_const_consumer_${language} PRIVATE
+        -Wall -Wextra -Werror -UUSE_128_BIT_TYPES)
+    target_compile_definitions(rdb_const_consumer_${language} PRIVATE
+        RDB_TEST_VALUE_BYTES=${rdb_test_value_bytes})
+endforeach()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     add_executable(rdb_mutex_init_tests rdb_mutex_init_tests.c
@@ -101,6 +119,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
         " -Wl,--wrap=malloc,--wrap=calloc,--wrap=snprintf,--wrap=__snprintf_chk")
 
     if(NOT CMAKE_CROSSCOMPILING)
+        # Test-only alternate library. Never also link the normal rdb DSO.
+        add_library(rdb_no_counters SHARED "${CMAKE_SOURCE_DIR}/src/rdb.c")
+        set_property(TARGET rdb_no_counters PROPERTY LINK_LIBRARIES pthread)
+        target_compile_options(rdb_no_counters PRIVATE -URDB_POOL_COUNTERS)
+
         # Preserve compiler/sanitizer settings in a separate consumer build,
         # without inheriting the library's private definitions or include paths.
         set(rdb_consumer_flags "${CMAKE_CURRENT_BINARY_DIR}/installed-consumer-flags.cmake")
@@ -121,9 +144,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
         configure_file(check_installed_consumers.cmake.in
             "${CMAKE_CURRENT_BINARY_DIR}/check_installed_consumers.cmake" @ONLY)
         add_test(NAME rdb_installed_consumers
-            COMMAND "${CMAKE_COMMAND}" "-DCONFIG=$<CONFIG>" -P
+            COMMAND "${CMAKE_COMMAND}" "-DCONFIG=$<CONFIG>"
+                "-DRDB_NO_COUNTERS=$<TARGET_FILE:rdb_no_counters>" -P
                 "${CMAKE_CURRENT_BINARY_DIR}/check_installed_consumers.cmake")
-        set_tests_properties(rdb_installed_consumers PROPERTIES TIMEOUT 120)
+        set_tests_properties(rdb_installed_consumers PROPERTIES
+            TIMEOUT 120 LABELS "rdb;abi;installed")
     endif()
 endif()
 
@@ -190,8 +215,12 @@ foreach(case numeric strings fifo lifo aborts collisions)
 endforeach()
 add_test (NAME rdb_dump_thread_tests COMMAND rdb_dump_thread_tests)
 add_test (NAME rdb_dump_tests COMMAND rdb_dump_tests)
-add_test (NAME rdb_header_consumer_c COMMAND rdb_header_consumer_c)
-add_test (NAME rdb_header_consumer_cpp COMMAND rdb_header_consumer_cpp)
+foreach(consumer rdb_header_consumer_c rdb_header_consumer_cpp
+        rdb_header_consumer_c_debug rdb_header_consumer_cpp_debug
+        rdb_const_consumer_c rdb_const_consumer_cpp)
+    add_test(NAME ${consumer} COMMAND ${consumer})
+    set_tests_properties(${consumer} PROPERTIES TIMEOUT 30 LABELS "rdb;abi")
+endforeach()
 if(TARGET rdb_mutex_init_tests)
     add_test (NAME rdb_mutex_init_tests COMMAND rdb_mutex_init_tests)
 endif()

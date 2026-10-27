@@ -146,10 +146,26 @@ to install under `/usr/lib64` instead. Both modes install the public headers
 under `/usr/include/rdb`.
 
 The `rdb_installed_consumers` test stages this install in the build directory
-and builds independent C and C++ consumers against it. Their build preserves
-the configured compiler and linker flags, including configuration-specific
-sanitizer flags, while using only the installed public headers and library.
-It does not install anything into the system directories.
+and builds eight independent consumers: C/C++, normal/no-counter libraries,
+and `RDB_POOL_COUNTERS` defined/undefined in the consumer. The alternate library
+is test-only and is copied into the isolated stage; it is never installed on
+the system or linked alongside the normal library. Statistics verify which
+variant was loaded. A deliberately incomplete unlink checks that fault fields
+read through the installed header match those returned by the library.
+
+Consumer builds preserve the configured compiler and linker flags, including
+configuration-specific sanitizer flags, while using only staged public headers
+and libraries. All consumers explicitly undefine `USE_128_BIT_TYPES`, so the
+installed configuration header must provide the correct scalar ABI.
+
+Separate C/C++ header tests expand the public logging macros with `DEBUG` on
+and off, include the header twice without prerequisite includes, and exercise
+pool locks. Scalar-consumer tests check the configured argument width,
+rejection of values that would narrow onto another record, and full-width
+positive/negative get/move/delete calls (128 bits when enabled, otherwise 64).
+Run all consumer checks with `ctest --test-dir build -L abi --output-on-failure`.
+Checks remain enabled in Release; ordinary cases have 30-second timeouts and
+the installed build/test matrix has a 120-second timeout.
 
 ## Coverage
 

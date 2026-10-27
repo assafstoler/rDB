@@ -11,14 +11,20 @@ if(NOT install_result STREQUAL "0")
     message(FATAL_ERROR "Install staging failed (${install_result}):\n${install_output}\n${install_error}")
 endif()
 
-set(include_dir "${stage}@CMAKE_INSTALL_PREFIX@/include/rdb")
+set(include_dir "${stage}@CMAKE_INSTALL_PREFIX@/include")
 set(library_dir "${stage}@CMAKE_INSTALL_PREFIX@/@INSTALL_LIB_DIR@")
-if(NOT EXISTS "${include_dir}/rdb.h" OR NOT EXISTS "${include_dir}/rdb_build_config.h")
+if(NOT EXISTS "${include_dir}/rdb/rdb.h" OR NOT EXISTS "${include_dir}/rdb/rdb_build_config.h")
     message(FATAL_ERROR "Installed public headers are missing from ${include_dir}")
 endif()
 if(NOT EXISTS "${library_dir}/librdb.so")
     message(FATAL_ERROR "Installed shared-library link is missing from ${library_dir}")
 endif()
+if(NOT DEFINED RDB_NO_COUNTERS OR NOT EXISTS "${RDB_NO_COUNTERS}")
+    message(FATAL_ERROR "Build the rdb_no_counters test library before running installed consumers")
+endif()
+# Keep both variants in the isolated stage; the alternate library is not installed.
+get_filename_component(no_counters_name "${RDB_NO_COUNTERS}" NAME)
+file(COPY "${RDB_NO_COUNTERS}" DESTINATION "${library_dir}")
 
 function(check_command)
     execute_process(COMMAND ${ARGV} RESULT_VARIABLE result
@@ -33,7 +39,10 @@ check_command("@CMAKE_COMMAND@" -S "@CMAKE_CURRENT_SOURCE_DIR@/installed_consume
     -B "${build_dir}" -G "@CMAKE_GENERATOR@"
     -C "@CMAKE_CURRENT_BINARY_DIR@/installed-consumer-flags.cmake"
     "-DCMAKE_BUILD_TYPE=${CONFIG}"
-    "-DRDB_INCLUDE_DIR=${include_dir}" "-DRDB_LIBRARY=${library_dir}/librdb.so")
+    "-DRDB_INCLUDE_DIR=${include_dir}"
+    "-DRDB_LIBRARY_normal=${library_dir}/librdb.so"
+    "-DRDB_LIBRARY_no_counters=${library_dir}/${no_counters_name}"
+    "-DRDB_VALUE_BYTES=@rdb_test_value_bytes@")
 check_command("@CMAKE_COMMAND@" --build "${build_dir}" --config "${CONFIG}")
 check_command("@CMAKE_COMMAND@" -E chdir "${build_dir}"
     "@CMAKE_CTEST_COMMAND@" -C "${CONFIG}" --output-on-failure)
