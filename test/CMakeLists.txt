@@ -76,7 +76,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
 
     add_executable(rdb_failure_injection_tests rdb_failure_injection_tests.c
         "${CMAKE_SOURCE_DIR}/src/rdb.c")
-    target_link_libraries(rdb_failure_injection_tests pthread)
+    # Override the directory-wide rdb linkage: this target compiles rdb.c.
+    set_property(TARGET rdb_failure_injection_tests PROPERTY LINK_LIBRARIES pthread)
     set_property(TARGET rdb_failure_injection_tests APPEND_STRING PROPERTY LINK_FLAGS
         " -Wl,--wrap=malloc,--wrap=calloc,--wrap=snprintf,--wrap=__snprintf_chk")
 
