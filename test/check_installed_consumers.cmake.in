@@ -1,7 +1,10 @@
+if(NOT DEFINED CONFIG)
+    set(CONFIG "@CMAKE_BUILD_TYPE@")
+endif()
 set(stage "@CMAKE_CURRENT_BINARY_DIR@/installed-consumer-stage")
 file(REMOVE_RECURSE "${stage}")
 execute_process(COMMAND "@CMAKE_COMMAND@" -E env "DESTDIR=${stage}"
-        "@CMAKE_COMMAND@" "-DCMAKE_INSTALL_CONFIG_NAME=@CMAKE_BUILD_TYPE@"
+        "@CMAKE_COMMAND@" "-DCMAKE_INSTALL_CONFIG_NAME=${CONFIG}"
         -P "@CMAKE_BINARY_DIR@/cmake_install.cmake"
     RESULT_VARIABLE install_result OUTPUT_VARIABLE install_output ERROR_VARIABLE install_error)
 if(NOT install_result STREQUAL "0")
@@ -26,16 +29,11 @@ function(check_command)
 endfunction()
 
 set(build_dir "@CMAKE_CURRENT_BINARY_DIR@/installed-consumer-build")
-file(MAKE_DIRECTORY "${build_dir}")
-check_command("@CMAKE_C_COMPILER@" -std=c11 -Wall -Wextra -Werror
-    "-I${include_dir}" "@CMAKE_CURRENT_SOURCE_DIR@/rdb_installed_consumer.c"
-    "-L${library_dir}" "-Wl,-rpath,${library_dir}" -lrdb -pthread
-    -o "${build_dir}/consumer-c")
-check_command("@CMAKE_CXX_COMPILER@" -std=c++14 -Wall -Wextra -Werror
-    "-I${include_dir}" "@CMAKE_CURRENT_SOURCE_DIR@/rdb_installed_consumer.cpp"
-    "-L${library_dir}" "-Wl,-rpath,${library_dir}" -lrdb -pthread
-    -o "${build_dir}/consumer-cpp")
-check_command("@CMAKE_COMMAND@" -E env "LD_LIBRARY_PATH=${library_dir}"
-    "${build_dir}/consumer-c")
-check_command("@CMAKE_COMMAND@" -E env "LD_LIBRARY_PATH=${library_dir}"
-    "${build_dir}/consumer-cpp")
+check_command("@CMAKE_COMMAND@" -S "@CMAKE_CURRENT_SOURCE_DIR@/installed_consumer"
+    -B "${build_dir}" -G "@CMAKE_GENERATOR@"
+    -C "@CMAKE_CURRENT_BINARY_DIR@/installed-consumer-flags.cmake"
+    "-DCMAKE_BUILD_TYPE=${CONFIG}"
+    "-DRDB_INCLUDE_DIR=${include_dir}" "-DRDB_LIBRARY=${library_dir}/librdb.so")
+check_command("@CMAKE_COMMAND@" --build "${build_dir}" --config "${CONFIG}")
+check_command("@CMAKE_COMMAND@" -E chdir "${build_dir}"
+    "@CMAKE_CTEST_COMMAND@" -C "${CONFIG}" --output-on-failure)

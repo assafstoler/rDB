@@ -82,10 +82,27 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang
         " -Wl,--wrap=malloc,--wrap=calloc,--wrap=snprintf,--wrap=__snprintf_chk")
 
     if(NOT CMAKE_CROSSCOMPILING)
+        # Preserve compiler/sanitizer settings in a separate consumer build,
+        # without inheriting the library's private definitions or include paths.
+        set(rdb_consumer_flags "${CMAKE_CURRENT_BINARY_DIR}/installed-consumer-flags.cmake")
+        file(WRITE "${rdb_consumer_flags}" "# Generated installed-consumer build settings.\n")
+        set(rdb_consumer_variables CMAKE_C_COMPILER CMAKE_C_COMPILER_ARG1
+            CMAKE_CXX_COMPILER CMAKE_CXX_COMPILER_ARG1
+            CMAKE_C_FLAGS CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS)
+        foreach(config ${CMAKE_BUILD_TYPE} ${CMAKE_CONFIGURATION_TYPES})
+            string(TOUPPER "${config}" config_upper)
+            list(APPEND rdb_consumer_variables CMAKE_C_FLAGS_${config_upper}
+                CMAKE_CXX_FLAGS_${config_upper} CMAKE_EXE_LINKER_FLAGS_${config_upper})
+        endforeach()
+        list(REMOVE_DUPLICATES rdb_consumer_variables)
+        foreach(variable ${rdb_consumer_variables})
+            file(APPEND "${rdb_consumer_flags}"
+                "set(${variable} [==[${${variable}}]==] CACHE STRING \"\" FORCE)\n")
+        endforeach()
         configure_file(check_installed_consumers.cmake.in
             "${CMAKE_CURRENT_BINARY_DIR}/check_installed_consumers.cmake" @ONLY)
         add_test(NAME rdb_installed_consumers
-            COMMAND "${CMAKE_COMMAND}" -P
+            COMMAND "${CMAKE_COMMAND}" "-DCONFIG=$<CONFIG>" -P
                 "${CMAKE_CURRENT_BINARY_DIR}/check_installed_consumers.cmake")
         set_tests_properties(rdb_installed_consumers PROPERTIES TIMEOUT 120)
     endif()

@@ -32,6 +32,12 @@ The normal library directory is `/usr/lib`. Configure with `-DLEGACY_BUILD=ON`
 to install under `/usr/lib64` instead. Both modes install the public headers
 under `/usr/include/rdb`.
 
+The `rdb_installed_consumers` test stages this install in the build directory
+and builds independent C and C++ consumers against it. Their build preserves
+the configured compiler and linker flags, including configuration-specific
+sanitizer flags, while using only the installed public headers and library.
+It does not install anything into the system directories.
+
 ## Coverage
 
 Coverage is optional and does not instrument or rebuild the normal binaries.
