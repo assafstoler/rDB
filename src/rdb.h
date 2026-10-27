@@ -6,6 +6,8 @@
 #define __rDB_h_
 
 #ifndef KM
+// Install this generated configuration together with the matching library.
+// It selects the scalar argument ABI; consumers must not override its width.
 #include "rdb_build_config.h"
 #include <pthread.h>
 #include <stddef.h>
@@ -106,10 +108,10 @@ extern "C" {
 // special case keys
 #define RDB_KTME	(1 << 25)	// Key is a time_t structure
 #define RDB_KTMA	(1 << 26)	// Key is time_t + 32 bit accomulator for non-unique key simulation
-// Sorting order
+// Ascending order is the default; RDB_KDEC is unsupported.
 #define RDB_KASC	(1 << 27)	// Key is sorted n ascending sequance
 #define RDB_KDEC	(1 << 28)	// Key is worted in descending sequance
-// Data pool type (tree, list or fifo for now ... skip-lists planned)
+// RDB_BTREE is required, including for FIFO/LIFO. RDB_LIST is unsupported.
 #define RDB_BTREE	(1 << 29) //16384	// use btree for key/index - we always use AVL now.
 #define RDB_LIST	(1 << 30) //32768	// use linked list for key storage
 #define RDB_NO_IDX  (1U << 31) // FIFO or LIFO - no Index
@@ -226,6 +228,8 @@ typedef struct balanced_pointer_pack_s {
 
 // A pool retains the first detected consistency failure until it is dropped.
 // Record operations then stop; rdb_drop_pool still releases the pool metadata.
+// The saved record may be only partially unlinked: this is not an ownership
+// transfer. Recover allocations from application tracking, not damaged indexes.
 #define RDB_ERR_FAULTED (-5)
 typedef struct {
     int code;
@@ -282,7 +286,12 @@ typedef struct RDB_POOLS {
 }  rdb_pool_t;
 
 
+// Record operations do not lock automatically. Callers serialize record access
+// and fault inspection, retain returned records, and prevent pool destruction
+// during use. Registry locking does not retain a returned pool's lifetime.
 extern char   	*rdb_error_string;
+// Initialize before creating pools; do not reinitialize a live registry.
+// Coordinate init/clean and rdb_print_pools with all registry users.
 void        rdb_init(void);
 // Set process-wide options before registering pools. By default, reindex
 // iteration rejects pools containing RDB_KCFUT. Allowing them permits
@@ -290,6 +299,7 @@ void        rdb_init(void);
 int         rdb_init_ex(uint32_t flags);
 // Return -1 for NULL, 0 for a healthy pool, or 1 for a faulted pool.
 // If out is non-NULL, copy the saved fault information into it.
+// This does not allocate or clear the fault; diagnostic strings are borrowed.
 int         rdb_pool_get_fault(const rdb_pool_t *pool, rdb_fault_info_t *out);
 // Save a copy of err, which may be the saved message or a suffix of it.
 // On allocation failure, print err and retain the previous message (or NULL
@@ -300,39 +310,67 @@ void        rdb_error (char *err);
 // Registry traversal is synchronized; the returned handle is borrowed and
 // must remain alive while the caller uses it.
 rdb_pool_t *rdb_find_pool_by_name (char *poolName);
-// Both pool creation APIs accept 1..RDB_POOL_MAX_IDX indexes. In user space,
+// Both pool creation APIs accept 1..RDB_POOL_MAX_IDX indexes. Records start with
+// that many rdb_bpp_t packs; key_offset is offsetof(record, field) minus their
+// total size, preserving normal compiler padding and key alignment. In user space,
 // mutex initialization failure returns NULL, reports the lock and error code,
 // and leaves the registry unchanged. key_size is the inline buffer capacity
 // for RDB_KSTR and zero for every other primary index.
+// rdb_add_pool is a low-level helper WITHOUT registry locking or name checks;
+// normal callers use rdb_register_um_pool instead.
 rdb_pool_t *rdb_add_pool (char *poolName, int indexCount, int key_offset,
                 int FLAGS, void *compare_fn, size_t key_size);
 rdb_pool_t *rdb_register_um_pool (char *poolName, 
 	            int idxCount, int key_offset, int FLAGS, void *fn,
                 size_t key_size);
+// Drop metadata only: clean(0) drops all pools and the saved global error;
+// gc/clean(1) drop marked pools, without checking emptiness or freeing records.
 void        rdb_clean(int);
 void        rdb_gc(void);
 // For a direct RDB_KSTR index, key_size is the inline buffer capacity;
 // pass zero for all other index types (including RDB_KCF layouts).
+// Configure all slots before record access; registration cannot grow a layout
+// or redefine a slot. Return idx on success; -1 for idx 0, -2 for an invalid
+// slot, -3 for redefinition, -4 for flags/size, RDB_ERR_REINDEX_NOMEM for metadata
+// allocation failure, or RDB_ERR_FAULTED for a faulted pool.
 int         rdb_register_um_idx (rdb_pool_t *pool, int idx, int key_offset,
                 int FLAGS, void *compare_fn, size_t key_size);
+// User-space locks are nonrecursive. Hold the lock across iteration callbacks;
+// callbacks must not reacquire it. Moves require both pools locked in a
+// consistent application-defined order (only once for a same-pool move).
 int         rdb_lock(rdb_pool_t *pool, const char *parent); 
 void         rdb_unlock(rdb_pool_t *pool, const char *parent);
+// Return indexCount on success, 0 on rejection with complete undo, -1 for
+// invalid arguments/index count, or RDB_ERR_FAULTED if consistency is lost.
 int         rdb_insert (rdb_pool_t *pool, void *data);
+// Single-index helpers do not change record_count. Insert_one returns >= 0
+// on success; a negative result is a rejection/error. Use only on an unlinked
+// index of a live record, keeping every still-linked key stable.
 int         rdb_insert_one (rdb_pool_t *pool, int index, void *data);
+// Numeric queries use the address of the registered numeric type's value.
 // For RDB_KPTR lookup/delete/move, pass &key (the address of a pointer value).
-// A key whose value is NULL is queried with &key; data == NULL selects the root.
+// A key whose value is NULL is queried with &key, not a NULL query argument.
 // For RDB_KSTR and RDB_KPSTR lookup/delete/move, pass the query string itself.
+// rdb_get(..., NULL) selects a tree root or FIFO/LIFO head. Queue lookups ignore
+// the key. Delete/move with NULL only select a queue head, never a tree root.
 void       *rdb_get (rdb_pool_t *pool, int idx, const void *data);
 // The _const APIs reject out-of-range values for built-in numeric and pointer
 // keys. Custom comparators receive &value; FIFO/LIFO indexes ignore the value.
+// Full-width unsigned keys use the signed argument's bit pattern. String
+// queries belong in the address-based APIs.
 void       *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value);
 // Tree lookup with the same key convention as rdb_get (including string keys).
 // On a miss, return NULL and the closest lower/higher records.
 // before/after must point to writable pointer variables; both are always assigned.
 // Missing neighbors, exact matches and data == NULL (select root) use NULL outputs.
 void       *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, void **after);
-// Returning RDB_CB_DELETE_NODE removes the current record and continues in
-// order; RDB_CB_DELETE_NODE_AND_ABORT removes it and then stops iteration.
+// Visit in index order: OK keeps/continues, ABORT keeps/stops, DELETE_NODE
+// deletes/continues, DELETE_NODE_AND_ABORT deletes/stops. A NULL visit callback
+// deletes every record. Cleanup frees/clears registered KPSTR keys before
+// del_fn; without del_fn it also frees the record. Ordinary delete does neither.
+// Callbacks may unlink/edit/reinsert the current record's OTHER indexes with
+// the single-index helpers. Keep the active traversal keys and links unchanged,
+// including key fields shared with other indexes. Check and handle rejection.
 void        rdb_iterate(rdb_pool_t *pool, int index, int fn(void *, void *),
                 void *fn_data, void del_fn(void *, void *), void *del_data);
 typedef int (*rdb_iterate_reindex_fn)(void *record, void *user_data,
@@ -342,6 +380,11 @@ typedef int (*rdb_iterate_reindex_fn)(void *record, void *user_data,
 // rdb_reindex_check_apply(). The record passed by rDB must remain unchanged.
 // Accepted keys are retained by rDB and applied after callbacks finish;
 // validation errors stop iteration, while earlier accepted keys are applied.
+// Requires a keyed traversal index and non-NULL callback. Return 0 on completion,
+// RDB_ITERATE_ABORTED on a callback stop, or a negative error. Ordinary aborts
+// still apply accepted proposals and retain completed deletions: not a transaction.
+// A callback fault stops before its deletion request and discards pending edits.
+// An apply-time fault may leave partial changes; inspect the pool's saved fault.
 // RDB_KCF layouts must be registered before records are inserted. Pools with
 // RDB_KCFUT indexes are rejected unless RDB_INIT_ALLOW_KCFUT was selected;
 // those indexes must remain unchanged during reindex iteration.
@@ -353,6 +396,7 @@ int         rdb_iterate_reindex(rdb_pool_t *pool, int index,
 // edit the live record or tree. The context and record argument are valid only
 // for the active callback. Any index changed on the candidate must be marked;
 // unsupported or unmarked edits fail and abort iteration.
+// Key swaps are unsupported; an earlier proposal can vacate a key for a later one.
 int         rdb_reindex_check_apply(rdb_reindex_ctx_t *ctx, void *record,
                 const void *candidate_record, rdb_index_mask_t changed_indexes);
 // Make a private, bounded edit copy of a KPSTR key component and point the
@@ -369,17 +413,31 @@ int         rdb_register_kcf_key_parts(rdb_pool_t *pool, int index,
                 const rdb_kcf_key_part_t *parts, size_t part_count);
 // rDB owns KPSTR values in registered indexes: it frees and clears them when
 // records are deleted by iteration or rdb_flush, before calling del_fn.
-// Flush empties all indexes and clears heads/tails and record count; the pool remains reusable.
+// This includes registered KCF KPSTR components and deduplicates aliases within
+// one record, not across records. Do not supply borrowed or shared string storage.
+// Flush empties all indexes and clears heads/tails and record count; the pool
+// remains reusable. Its cleanup callback must not traverse/change this pool.
+// Faulted pools are not flushed. Default cleanup also frees the record.
 void        rdb_flush( rdb_pool_t *pool, void fn( void *, void *), void *fn_data);
 // Indexed record operations require 0 <= index < pool->indexCount and
 // index < RDB_POOL_MAX_IDX (the source index for moves). Invalid indexes leave
 // records and pool metadata unchanged. Pointer APIs return NULL; insert_one,
 // delete_one and move2 return -1. Iterate and dump report an error and do no work.
+// Ordinary delete only unlinks and returns a record, including its string keys;
+// it does not free anything. Faulted pools return NULL without further changes.
 void       *rdb_delete (rdb_pool_t *pool, int lookupIndex, void *data);
 // Repeating this call on a still-live FIFO/LIFO record already unlinked by it
 // returns 0 without changing or faulting the pool; never pass freed storage.
+// Historical 0/1 results describe AVL height change, not a reliable found/missing
+// distinction. This helper does not adjust record_count or free record resources.
 int         rdb_delete_one (rdb_pool_t *pool, int index, void *data);
 void       *rdb_delete_const (rdb_pool_t *pool, int idx, __intmax_t value);
+// Moves transfer the record without copying/freeing it; both layouts must fit.
+// Rejection with successful rollback preserves membership/counts and exact queue
+// order; trees may rebalance. A same-pool success can reorder its queues.
+// Pointer variants return the record or NULL. Move2 returns 0 on success, -1 for
+// invalid source/miss, -2 for destination rejection with restoration, or
+// RDB_ERR_FAULTED. Inspect BOTH pools after a fault; restoration is not assured.
 void       *rdb_move_const (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, __intmax_t value);
 void       *rdb_move (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data);
 int         rdb_move2 (rdb_pool_t *dst_pool, rdb_pool_t *src_pool, int idx, void *data);
@@ -393,10 +451,13 @@ void        rdb_print_pools(void *fp);
 // Safe alongside normally locked record updates and pool registration/drop.
 // Uses only the registry lock; counts are sampled individually, not as a
 // simultaneous snapshot. Coordinate initialization and global cleanup as usual.
+// RDB_POOL_COUNTERS affects library reporting, not the public layout. Libraries
+// built without it leave record_count zero and report that counting is disabled.
 char       *rdb_print_pool_stats (char *buf, int max_len);
 
 //void        _rdb_dump (rdb_pool_t *, int index, void *start);
 // Traversal state is local to each call; concurrent stdout output may interleave.
+// Callers synchronize record access. Prints separator after each item, no newline.
 void        rdb_dump (rdb_pool_t *pool, int index, char *separator);
 
 int         key_cmp_str (char *old, char *);
