@@ -22,6 +22,25 @@ stderr output and signal termination. Run these cases with
 timeout. The fixtures release their records, strings and pools so leak
 detection can remain enabled.
 
+The fault-containment contract tests add seven cases for invalid insert
+layouts, failed insert undo, failed move rollback, partial multi-index unlink,
+unexpected two-child deletion, inconsistent queue links and faults raised
+inside reindex callbacks. Move failures cover destination undo, source
+reinsertion and restoration of the source queue position. The fixtures
+deliberately alter comparators or links to reach these defensive paths; normal
+callers must keep keys/comparators stable and leave internal links alone.
+
+After a fault, checks require the first diagnostic to remain unchanged,
+record operations to refuse further work, and visit/cleanup callbacks to stay
+unused. An unrelated pool must keep working; lookup, locks and metadata
+teardown remain available on the damaged pool. Reindex callback faults must
+prevent deletion regardless of the callback result, discard staged edits,
+and preserve records with either default or custom cleanup. Fixtures retain
+their own allocation lists and free them after dropping damaged pools, without
+traversing their indexes. All checks remain enabled in Release. Each case has
+a 30-second timeout; run them with
+`ctest --test-dir build -L fault_contract --output-on-failure`.
+
 The Linux move-layout tests add two independent regression cases. The matrix
 covers 256 source/destination pairs with 1, 2, 3 and the maximum supported
 number of indexes (currently 24), using tree, FIFO, LIFO and mixed layouts.

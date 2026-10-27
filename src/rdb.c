@@ -2865,6 +2865,11 @@ int rdb_iterate_reindex(rdb_pool_t *pool, int index,
         ctx.error = 0;
         callback_result = fn(records[i], fn_data, &ctx);
         reindex_temps_free(&ctx);
+        // A callback fault forbids further record changes, including deletion.
+        if (pool->fault.code) {
+            rc = RDB_ERR_FAULTED;
+            break;
+        }
         if (ctx.error) {
             rc = ctx.error;
             break;
