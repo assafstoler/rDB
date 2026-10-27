@@ -22,10 +22,11 @@ stderr output and signal termination. Run these cases with
 timeout. The fixtures release their records, strings and pools so leak
 detection can remain enabled.
 
-The fault-containment contract tests add seven cases for invalid insert
+The fault-containment contract tests add nine cases for invalid insert
 layouts, failed insert undo, failed move rollback, partial multi-index unlink,
 unexpected two-child deletion, inconsistent queue links and faults raised
-inside reindex callbacks. Move failures cover destination undo, source
+inside reindex callbacks, staged apply/unlink failures and metadata registration
+on a faulted custom-key pool. Move failures cover destination undo, source
 reinsertion and restoration of the source queue position. The fixtures
 deliberately alter comparators or links to reach these defensive paths; normal
 callers must keep keys/comparators stable and leave internal links alone.
@@ -40,6 +41,37 @@ their own allocation lists and free them after dropping damaged pools, without
 traversing their indexes. All checks remain enabled in Release. Each case has
 a 30-second timeout; run them with
 `ctest --test-dir build -L fault_contract --output-on-failure`.
+
+The scalar boundary tests cover minimum/maximum values, rejection immediately
+outside each narrower key type's range, and pointer values that would otherwise
+alias after truncation. They exercise get/delete/move in both index positions
+and custom comparators attached to either custom or built-in type flags. The
+API edge tests check NULL/root queries, empty operations, registry removal,
+and repeated single-index deletion misses without changing records or indexes.
+Run these cases with:
+
+```sh
+ctest --test-dir build -L 'const_boundary|api_edge' --output-on-failure
+```
+
+Dump tests compare exact output for numeric boundaries, custom keys, empty
+strings, NULL pointer keys, separators and multiple index positions. Threaded
+dumps use six independent locked pools with tree/FIFO/LIFO/mixed layouts;
+interleaving is allowed, but each pool's exact sequence must survive unchanged.
+Record snapshots and lookups check that dumping does not modify records. Run
+them with `ctest --test-dir build -L dump --output-on-failure`.
+
+The staged-reindex contract tests cover invalid callback requests, sticky
+validation errors, repeated bounded string edits, deep-copy isolation, queue
+and opaque companion-index masks, partially copied composite strings, and
+default/custom cleanup of aliased strings during staged deletion and abort.
+Run them with `ctest --test-dir build -L reindex_contract --output-on-failure`.
+The Linux allocation-failure test additionally fails each successive allocation
+through inline-key metadata creation and complete direct/composite reindexing.
+It requires unchanged records after failure and a successful retry on the same
+pool. Sanitizers check that rejected/replaced proposals and owned strings are
+released without leaks, double frees or use-after-free. These new cases use
+always-enabled checks; each CTest case has a 30-second timeout.
 
 The Linux move-layout tests add two independent regression cases. The matrix
 covers 256 source/destination pairs with 1, 2, 3 and the maximum supported
@@ -166,6 +198,46 @@ positive/negative get/move/delete calls (128 bits when enabled, otherwise 64).
 Run all consumer checks with `ctest --test-dir build -L abi --output-on-failure`.
 Checks remain enabled in Release; ordinary cases have 30-second timeouts and
 the installed build/test matrix has a 120-second timeout.
+
+## ThreadSanitizer
+
+Use a separate Linux/GCC build to instrument the library and both C/C++ test
+consumers. ThreadSanitizer must not be combined with AddressSanitizer or
+LeakSanitizer in the same build:
+
+```sh
+cmake -S . -B build/tsan -DSKIP_KERNEL=ON -DBUILD_TESTING=ON \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+  -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+cmake --build build/tsan -j"$(nproc)"
+TSAN_OPTIONS=halt_on_error=1 ctest --test-dir build/tsan \
+  --output-on-failure -j2 -E '^coverage_runner_tests$'
+```
+
+The excluded test exercises the Python coverage-report tooling; run it in the
+normal build. All native tests, including the installed-consumer build/test
+matrix, remain enabled. Sanitizer failures must produce a failing test; do not
+suppress reports to obtain a passing run.
+
+On Linux x86-64, GCC's TSan runtime can fail before `main()` with
+`FATAL: ThreadSanitizer: unexpected memory mapping` when randomized executable
+or library addresses conflict with its reserved memory layout. For this startup
+failure, launch the test process and its children with a fixed address layout:
+
+```sh
+TSAN_OPTIONS=halt_on_error=1 setarch x86_64 -R ctest --test-dir build/tsan \
+  --output-on-failure -j2 -E '^coverage_runner_tests$'
+```
+
+This changes the address-layout setting only for that process tree; it does not
+change system-wide ASLR settings or disable race detection. The process must be
+allowed to use `personality(ADDR_NO_RANDOMIZE)`, which some sandboxes restrict.
+This workaround was verified with GCC 13 and libtsan2 14 on x86-64 Linux, using
+both a clean mutex-protected probe and a deliberate race before running the
+native suite. Other runtimes or architectures may need a different remedy; see
+[LLVM's sanitizer address-layout handling](https://github.com/llvm/llvm-project/pull/97125).
 
 ## Coverage
 

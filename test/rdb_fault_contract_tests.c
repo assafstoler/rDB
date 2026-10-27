@@ -4,7 +4,7 @@
 #include "rdb_test_support.h"
 
 enum { INDEXES = 3, QUIET, HIDE_UNDO, REJECT_RESTORE, BREAK_RESTORE_QUEUE };
-typedef struct { rdb_bpp_t links[INDEXES]; int32_t key[INDEXES]; } item;
+typedef struct { rdb_bpp_t links[INDEXES]; int32_t key[INDEXES]; char *name; } item;
 static item *victim, *other;
 static int injection, armed, triggered, visits, cleanups;
 
@@ -332,12 +332,114 @@ static void queue_links(void)
     }
 }
 
+enum { APPLY_UNLINK, APPLY_REINSERT, DELETE_UNLINK };
+static int apply_injection;
+static int compare_reindex_string(void *a, void *b)
+{
+    const char *old = *(char **)a, *next = *(char **)b;
+    /* Match the live field address: staging comparisons must remain valid.
+     * Inject only during apply's unlink/reinsert after the callback returns. */
+    if (armed && b == &victim->name) {
+        if (apply_injection == APPLY_UNLINK && strcmp(next, "alpha") == 0) {
+            ++triggered;
+            return 1; // Hide the existing left child from unlink.
+        }
+        if (apply_injection == APPLY_REINSERT && strcmp(next, "charlie") == 0) {
+            ++triggered;
+            return 0; // Reject the otherwise unique replacement at reinsertion.
+        }
+    }
+    return strcmp(next, old);
+}
+
+struct apply_request { int mode; };
+static int stage_fault(void *data, void *opaque, rdb_reindex_ctx_t *ctx)
+{
+    item *record = data;
+    struct apply_request *request = opaque;
+    ++visits;
+    if (record == victim) {
+        item candidate = *record;
+        candidate.name = "charlie";
+        CHECK(rdb_reindex_check_apply(ctx, record, &candidate, RDB_INDEX_MASK(2)) == 0);
+        CHECK(strcmp(record->name, "alpha") == 0);
+        if (request->mode == DELETE_UNLINK) {
+            /* A live, owned neighbour is altered only to test containment. */
+            ((rdb_bpp_t *)record->links[1].left)->right = NULL;
+            return RDB_CB_DELETE_NODE;
+        }
+    }
+    if (record == other) armed = 1;
+    return RDB_CB_OK;
+}
+
+static void reindex_apply_fault(void)
+{
+    for (int mode = APPLY_UNLINK; mode <= DELETE_UNLINK; ++mode)
+    for (int custom_cleanup = 0; custom_cleanup < 2; ++custom_cleanup) {
+        apply_injection = mode;
+        armed = triggered = visits = cleanups = 0;
+        rdb_pool_t *p = rdb_register_um_pool("reindex-apply-fault", INDEXES,
+                KEY_OFFSET(item, key[0], INDEXES), RDB_BTREE | RDB_KINT32, NULL, 0);
+        CHECK(p);
+        CHECK(rdb_register_um_idx(p, 1, 0, RDB_BTREE | RDB_KFIFO, NULL, 0) == 1);
+        CHECK(rdb_register_um_idx(p, 2, KEY_OFFSET(item, name, INDEXES),
+                    RDB_BTREE | RDB_KPSTR, compare_reindex_string, 0) == 2);
+        other = new_item(20, 20);
+        victim = new_item(10, 10);
+        other->name = strdup("bravo");
+        victim->name = strdup("alpha");
+        CHECK(other->name && victim->name);
+        CHECK(rdb_insert(p, other) == INDEXES);
+        CHECK(rdb_insert(p, victim) == INDEXES);
+        struct apply_request request = {mode};
+        CHECK(rdb_iterate_reindex(p, 0, stage_fault, &request,
+                    custom_cleanup ? count_cleanup : NULL, NULL) == RDB_ERR_FAULTED);
+        CHECK(visits == (mode == DELETE_UNLINK ? 1 : 2));
+        CHECK(cleanups == 0 && p->record_count == 2);
+        CHECK(mode == DELETE_UNLINK || triggered > 0);
+        CHECK(strcmp(victim->name, mode == APPLY_REINSERT ? "charlie" : "alpha") == 0);
+        CHECK(strcmp(other->name, "bravo") == 0);
+        if (mode != DELETE_UNLINK) CHECK(strcmp(p->fault.operation, "reindex apply") == 0);
+        check_faulted(p, victim, mode == DELETE_UNLINK ? 1 : 2);
+        rdb_drop_pool(p);
+        /* Old keys and rejected proposals belong to rDB; surviving live fields
+         * remain application-owned after a fault. Never traverse broken links. */
+        free(victim->name); free(other->name);
+        free(victim); free(other);
+    }
+    armed = 0;
+}
+
+static void reindex_metadata_fault(void)
+{
+    rdb_pool_t *p = rdb_register_um_pool("kcf-fault-metadata", 1,
+            KEY_OFFSET(item, key[0], 1), RDB_BTREE | RDB_KCF, compare, 0);
+    CHECK(p);
+    const rdb_kcf_key_part_t part = {0, RDB_KINT32, 0};
+    CHECK(rdb_register_kcf_key_parts(p, 0, &part, 1) == 0);
+    item *records[] = {new_item(20, 20), new_item(10, 10), new_item(30, 30)};
+    for (size_t i = 0; i < ARRAY_COUNT(records); ++i)
+        CHECK(rdb_insert(p, records[i]) == 1);
+    CHECK(p->root[0] == (rdb_bpp_t *)records[0]);
+    CHECK(_rdb_delete_by_pointer(p, NULL, 0, p->root[0], 0) == RDB_ERR_FAULTED);
+    rdb_pool_t before;
+    memcpy(&before, p, sizeof(before));
+    char *diagnostic = rdb_error_string;
+    CHECK(rdb_register_kcf_key_parts(p, 0, &part, 1) == RDB_ERR_FAULTED);
+    CHECK(memcmp(p, &before, sizeof(before)) == 0 && rdb_error_string == diagnostic);
+    check_faulted(p, records[0], 0);
+    rdb_drop_pool(p);
+    for (size_t i = 0; i < ARRAY_COUNT(records); ++i) free(records[i]);
+}
+
 int main(int argc, char **argv)
 {
     const struct test_case cases[] = {
         {"invalid_insert_layout", invalid_insert_layout}, {"insert_undo", insert_undo}, {"move_rollback", move_rollback},
         {"partial_unlink", partial_unlink}, {"formerly_fatal", formerly_fatal},
-        {"queue_links", queue_links}, {"reindex_callback_fault", reindex_callback_fault}
+        {"queue_links", queue_links}, {"reindex_callback_fault", reindex_callback_fault},
+        {"reindex_apply_fault", reindex_apply_fault}, {"reindex_metadata_fault", reindex_metadata_fault}
     };
     return run_case(argc, argv, cases, ARRAY_COUNT(cases));
 }

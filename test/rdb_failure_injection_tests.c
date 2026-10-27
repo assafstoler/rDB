@@ -333,6 +333,175 @@ static void stats_format_failure(void)
         rdb_drop_pool(pools[i]);
 }
 
+typedef struct {
+    rdb_bpp_t links[2];
+    int32_t id;
+    char key[16];
+} inline_allocation_record;
+
+static void inline_metadata_allocation_failures(void)
+{
+    const int key = (int)(offsetof(inline_allocation_record, key) - 2 * sizeof(rdb_bpp_t));
+    const int id = (int)(offsetof(inline_allocation_record, id) - 2 * sizeof(rdb_bpp_t));
+    int reached_success = 0, failed = 0;
+    for (int attempt = 1; attempt <= 16 && !reached_success; ++attempt) {
+        rdb_pool_t *existing = rdb_register_um_pool("inline-existing", 1,
+                key_offset(), RDB_BTREE | RDB_KINT32, NULL, 0);
+        CHECK(existing != NULL);
+        if (!existing) return;
+        fail_allocation = attempt;
+        rdb_pool_t *pool = rdb_register_um_pool("inline-allocation", 2, key,
+                RDB_BTREE | RDB_KSTR, NULL, sizeof(((inline_allocation_record *)0)->key));
+        int pending = fail_allocation;
+        fail_allocation = 0;
+        if (!pool) {
+            ++failed;
+            CHECK(pending == 0);
+            CHECK(rdb_find_pool_by_name("inline-allocation") == NULL);
+            CHECK(existing->next == NULL && existing->prev == NULL);
+            pool = rdb_register_um_pool("inline-allocation", 2, key,
+                    RDB_BTREE | RDB_KSTR, NULL, sizeof(((inline_allocation_record *)0)->key));
+            CHECK(pool != NULL);
+        } else reached_success = 1;
+        CHECK(rdb_find_pool_by_name("inline-existing") == existing);
+        if (pool) {
+            CHECK(rdb_register_um_idx(pool, 1, id, RDB_BTREE | RDB_KINT32, NULL, 0) == 1);
+            inline_allocation_record *record = calloc(1, sizeof(*record));
+            CHECK(record != NULL);
+            if (record) {
+                record->id = 7;
+                strcpy(record->key, "after-retry");
+                CHECK(rdb_insert(pool, record) == 2);
+                CHECK(rdb_get(pool, 0, "after-retry") == record);
+                CHECK(rdb_get_const(pool, 1, 7) == record);
+                rdb_flush(pool, NULL, NULL);
+            }
+            rdb_drop_pool(pool);
+        }
+        rdb_drop_pool(existing);
+    }
+    CHECK(reached_success && failed > 0);
+
+    rdb_pool_t *pool = rdb_register_um_pool("inline-index-allocation", 2, id,
+            RDB_BTREE | RDB_KINT32, NULL, 0);
+    CHECK(pool != NULL);
+    if (!pool) return;
+    fail_allocation = 1; // First inline index lazily allocates its metadata.
+    CHECK(rdb_register_um_idx(pool, 1, key, RDB_BTREE | RDB_KSTR, NULL, 16)
+            == RDB_ERR_REINDEX_NOMEM);
+    CHECK(fail_allocation == 0);
+    CHECK(pool->FLAGS[1] == 0 && pool->root[1] == NULL && pool->record_count == 0);
+    CHECK(rdb_pool_get_fault(pool, NULL) == 0);
+    CHECK(rdb_register_um_idx(pool, 1, key, RDB_BTREE | RDB_KSTR, NULL, 16) == 1);
+    inline_allocation_record *record = calloc(1, sizeof(*record));
+    CHECK(record != NULL);
+    if (record) {
+        strcpy(record->key, "ready");
+        CHECK(rdb_insert(pool, record) == 2);
+        CHECK(rdb_get(pool, 1, "ready") == record);
+        rdb_flush(pool, NULL, NULL);
+    }
+    rdb_drop_pool(pool);
+}
+
+typedef struct {
+    rdb_bpp_t links[2];
+    int32_t id;
+    char *names[2];
+} allocation_record;
+struct allocation_state { int compound, visits, result; };
+
+static int compare_names(void *a, void *b)
+{
+    char **old = a, **next = b;
+    int rc = strcmp(next[0], old[0]);
+    return rc ? rc : strcmp(next[1], old[1]);
+}
+
+static int stage_allocations(void *data, void *opaque, rdb_reindex_ctx_t *ctx)
+{
+    allocation_record *record = data, candidate = *record;
+    struct allocation_state *state = opaque;
+    ++state->visits;
+    candidate.id = 11;
+    candidate.names[0] = "updated";
+    if (state->compound) candidate.names[1] = "second";
+    state->result = rdb_reindex_check_apply(ctx, record, &candidate,
+            RDB_INDEX_MASK(0) | RDB_INDEX_MASK(1));
+    return RDB_CB_OK;
+}
+
+/* Fail each successive allocation until a complete successful operation is
+ * reached. This includes collection, compound copies, retained entries and
+ * apply's old-string list, without binding tests to their allocation order. */
+static void complete_reindex_allocation_failures(void)
+{
+    for (int compound = 0; compound < 2; ++compound) {
+        int reached_success = 0, failed = 0;
+        for (int attempt = 1; attempt <= 64 && !reached_success; ++attempt) {
+            const int id = (int)(offsetof(allocation_record, id) - 2 * sizeof(rdb_bpp_t));
+            const int names = (int)(offsetof(allocation_record, names) - 2 * sizeof(rdb_bpp_t));
+            rdb_pool_t *pool = rdb_register_um_pool("reindex-all-allocations", 2,
+                    id, RDB_BTREE | RDB_KINT32, NULL, 0);
+            CHECK(pool != NULL);
+            if (!pool) return;
+            CHECK(rdb_register_um_idx(pool, 1, names,
+                        RDB_BTREE | (compound ? RDB_KCF : RDB_KPSTR),
+                        compound ? compare_names : NULL, 0) == 1);
+            if (compound) {
+                const rdb_kcf_key_part_t parts[] = {
+                    {0, RDB_KPSTR, 0}, {sizeof(char *), RDB_KPSTR, 0}
+                };
+                CHECK(rdb_register_kcf_key_parts(pool, 1, parts, 2) == 0);
+            }
+            allocation_record *record = calloc(1, sizeof(*record));
+            CHECK(record != NULL);
+            if (!record) { rdb_drop_pool(pool); return; }
+            record->id = 1;
+            record->names[0] = strdup("alpha");
+            if (compound) record->names[1] = strdup("beta");
+            CHECK(record->names[0] && (!compound || record->names[1]));
+            CHECK(rdb_insert(pool, record) == 2);
+            allocation_record before;
+            memcpy(&before, record, sizeof(before));
+            struct allocation_state state = {compound, 0, 0};
+            fail_allocation = attempt;
+            int rc = rdb_iterate_reindex(pool, 0, stage_allocations, &state, NULL, NULL);
+            int pending = fail_allocation;
+            fail_allocation = 0;
+            if (rc < 0) {
+                ++failed;
+                CHECK(rc == RDB_ERR_REINDEX_NOMEM && pending == 0);
+                CHECK(state.visits <= 1);
+                CHECK(state.result == 0 || state.result == RDB_ERR_REINDEX_NOMEM);
+                CHECK(memcmp(record, &before, sizeof(before)) == 0);
+                CHECK(strcmp(record->names[0], "alpha") == 0);
+                if (compound) CHECK(strcmp(record->names[1], "beta") == 0);
+                CHECK(rdb_get_const(pool, 0, 1) == record);
+                CHECK(!rdb_get_const(pool, 0, 11));
+                CHECK(rdb_get(pool, 1, compound ? (void *)before.names : (void *)"alpha") == record);
+                CHECK(pool->record_count == 1 && rdb_pool_get_fault(pool, NULL) == 0);
+                state.visits = state.result = 0;
+                CHECK(rdb_iterate_reindex(pool, 0, stage_allocations, &state, NULL, NULL) == 0);
+            } else {
+                CHECK(rc == 0 && pending > 0);
+                reached_success = 1;
+            }
+            CHECK(state.visits == 1 && state.result == 0);
+            CHECK(strcmp(record->names[0], "updated") == 0);
+            if (compound) CHECK(strcmp(record->names[1], "second") == 0);
+            CHECK(rdb_get_const(pool, 0, 11) == record);
+            CHECK(!rdb_get_const(pool, 0, 1));
+            char *updated[] = {"updated", "second"};
+            CHECK(rdb_get(pool, 1, compound ? (void *)updated : (void *)"updated") == record);
+            CHECK(pool->record_count == 1 && rdb_pool_get_fault(pool, NULL) == 0);
+            rdb_flush(pool, NULL, NULL);
+            rdb_drop_pool(pool);
+        }
+        CHECK(reached_success && failed > 0);
+    }
+}
+
 int main(void)
 {
     rdb_init();
@@ -340,6 +509,8 @@ int main(void)
     reindex_key_allocation_failures();
     reindex_string_allocation_failures();
     kcf_metadata_allocation_failures();
+    inline_metadata_allocation_failures();
+    complete_reindex_allocation_failures();
     stats_format_failure();
     rdb_clean(0);
     return failures ? EXIT_FAILURE : EXIT_SUCCESS;
