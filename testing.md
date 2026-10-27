@@ -14,6 +14,14 @@ also uses `-O2`. Regression targets are enabled by default; configure with
 builds require a matching kernel development tree. Leave `SKIP_KERNEL` unset to
 include that build when the required headers are available.
 
+The legacy output-comparison tests also require a zero exit status and empty
+stderr, so expected output cannot hide a crash or sanitizer failure. Their
+subprocess runner is checked with passing output, a mismatch, a nonzero exit,
+stderr output and signal termination. Run these cases with
+`ctest --test-dir build -L legacy --output-on-failure`; each has a 30-second
+timeout. The fixtures release their records, strings and pools so leak
+detection can remain enabled.
+
 Install to a staging directory without changing system libraries:
 
 ```sh

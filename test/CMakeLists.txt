@@ -152,79 +152,57 @@ if(RDB_TEST_PYTHON)
     endif()
 endif()
 
-add_test (rdb_test_init_clean rdb_test -t1)
-set_tests_properties (rdb_test_init_clean
-    PROPERTIES PASS_REGULAR_EXPRESSION "^Ok\n$")
+# Require successful execution as well as the historical stdout expectations.
+function(rdb_legacy_case name expected)
+    add_test(NAME ${name} COMMAND "${CMAKE_COMMAND}"
+        "-DBINARY=$<TARGET_FILE:rdb_test>" "-DARGUMENTS=${ARGN}"
+        "-DEXPECTED=${expected}" -P "${CMAKE_CURRENT_SOURCE_DIR}/check_legacy.cmake")
+    set_tests_properties(${name} PROPERTIES TIMEOUT 30 LABELS "rdb;legacy")
+endfunction()
 
-add_test (rdb_test_register_pools rdb_test -t2)
-set_tests_properties (rdb_test_register_pools
-    PROPERTIES PASS_REGULAR_EXPRESSION "^Ok\nOk\n$")
+rdb_legacy_case(rdb_test_init_clean "^Ok\n$" -t1)
 
-add_test (rdb_test_data_16_0 rdb_test -t3 -l2 -i0)
-set_tests_properties (rdb_test_data_16_0
-    PROPERTIES PASS_REGULAR_EXPRESSION "^AAAA,AAAB,AABA,AABB,ABAA,ABAB,ABBA,ABBB,BAAA,BAAB,BABA,BABB,BBAA,BBAB,BBBA,BBBB,\n$")
+rdb_legacy_case(rdb_test_register_pools "^Ok\nOk\n$" -t2)
 
-add_test (rdb_test_data_16_1 rdb_test -t3 -l2 -i1)
-set_tests_properties (rdb_test_data_16_1
-    PROPERTIES PASS_REGULAR_EXPRESSION "^aaaa,aaab,aaba,aabb,abaa,abab,abba,abbb,baaa,baab,baba,babb,bbaa,bbab,bbba,bbbb,\n$")
+rdb_legacy_case(rdb_test_data_16_0 "^AAAA,AAAB,AABA,AABB,ABAA,ABAB,ABBA,ABBB,BAAA,BAAB,BABA,BABB,BBAA,BBAB,BBBA,BBBB,\n$" -t3 -l2 -i0)
 
-add_test (rdb_test_data_16_2 rdb_test -t3 -l2 -i2)
-set_tests_properties (rdb_test_data_16_2
-    PROPERTIES PASS_REGULAR_EXPRESSION "^0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n$")
+rdb_legacy_case(rdb_test_data_16_1 "^aaaa,aaab,aaba,aabb,abaa,abab,abba,abbb,baaa,baab,baba,babb,bbaa,bbab,bbba,bbbb,\n$" -t3 -l2 -i1)
 
-add_test (rdb_test_data_16_3 rdb_test -t3 -l2 -i3)
-set_tests_properties (rdb_test_data_16_3
-    PROPERTIES PASS_REGULAR_EXPRESSION "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$")
+rdb_legacy_case(rdb_test_data_16_2 "^0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n$" -t3 -l2 -i2)
 
-add_test (rdb_test_data_16_4 rdb_test -t3 -l2 -i4)
-set_tests_properties (rdb_test_data_16_4
-    PROPERTIES PASS_REGULAR_EXPRESSION "^0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n$")
+rdb_legacy_case(rdb_test_data_16_3 "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$" -t3 -l2 -i3)
 
-add_test (rdb_test_data_16_5 rdb_test -t3 -l2 -i5)
-set_tests_properties (rdb_test_data_16_5
-    PROPERTIES PASS_REGULAR_EXPRESSION "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$")
+rdb_legacy_case(rdb_test_data_16_4 "^0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n$" -t3 -l2 -i4)
 
-add_test (rdb_test_data_16_6 rdb_test -t3 -l2 -i6)
-set_tests_properties (rdb_test_data_16_6
-    PROPERTIES PASS_REGULAR_EXPRESSION "^0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n$")
+rdb_legacy_case(rdb_test_data_16_5 "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$" -t3 -l2 -i5)
 
-add_test (rdb_test_data_16_7 rdb_test -t3 -l2 -i7)
-set_tests_properties (rdb_test_data_16_7
-    PROPERTIES PASS_REGULAR_EXPRESSION "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$")
+rdb_legacy_case(rdb_test_data_16_6 "^0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n$" -t3 -l2 -i6)
 
-add_test (rdb_test_data_16_8 rdb_test -t3 -l2 -i8)
-set_tests_properties (rdb_test_data_16_8
-    PROPERTIES PASS_REGULAR_EXPRESSION "^0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n$")
+rdb_legacy_case(rdb_test_data_16_7 "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$" -t3 -l2 -i7)
 
-add_test (rdb_test_data_16_9 rdb_test -t3 -l2 -i9)
-set_tests_properties (rdb_test_data_16_9
-    PROPERTIES PASS_REGULAR_EXPRESSION "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$")
+rdb_legacy_case(rdb_test_data_16_8 "^0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n$" -t3 -l2 -i8)
 
-add_test (rdb_test_data_16_10 rdb_test -t3 -l2 -i10)
-set_tests_properties (rdb_test_data_16_10
-    PROPERTIES PASS_REGULAR_EXPRESSION "^0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n$")
+rdb_legacy_case(rdb_test_data_16_9 "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$" -t3 -l2 -i9)
 
-add_test (rdb_test_data_16_11 rdb_test -t3 -l2 -i11)
-set_tests_properties (rdb_test_data_16_11
-    PROPERTIES PASS_REGULAR_EXPRESSION "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$")
+rdb_legacy_case(rdb_test_data_16_10 "^0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n$" -t3 -l2 -i10)
 
-add_test (rdb_test_data_16_13 rdb_test -t3 -l2 -i14)
-set_tests_properties (rdb_test_data_16_13
-    PROPERTIES PASS_REGULAR_EXPRESSION "^AAAA,BAAA,ABAA,BBAA,AABA,BABA,ABBA,BBBA,AAAB,BAAB,ABAB,BBAB,AABB,BABB,ABBB,BBBB,\n$")
+rdb_legacy_case(rdb_test_data_16_11 "^-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,\n$" -t3 -l2 -i11)
 
-add_test (rdb_test_data_16_14 rdb_test -t3 -l2 -i15)
-set_tests_properties (rdb_test_data_16_14
-    PROPERTIES PASS_REGULAR_EXPRESSION "^BBBB,ABBB,BABB,AABB,BBAB,ABAB,BAAB,AAAB,BBBA,ABBA,BABA,AABA,BBAA,ABAA,BAAA,AAAA,\n$")
+rdb_legacy_case(rdb_test_data_16_13 "^AAAA,BAAA,ABAA,BBAA,AABA,BABA,ABBA,BBBA,AAAB,BAAB,ABAB,BBAB,AABB,BABB,ABBB,BBBB,\n$" -t3 -l2 -i14)
 
-add_test (rdb_test_data_get rdb_test -t4)
-set_tests_properties (rdb_test_data_get
-    PROPERTIES PASS_REGULAR_EXPRESSION "^DAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\n$")
+rdb_legacy_case(rdb_test_data_16_14 "^BBBB,ABBB,BABB,AABB,BBAB,ABAB,BAAB,AAAB,BBBA,ABBA,BABA,AABA,BBAA,ABAA,BAAA,AAAA,\n$" -t3 -l2 -i15)
 
-add_test (rdb_test_data_move rdb_test -t5)
-set_tests_properties (rdb_test_data_move
-    PROPERTIES PASS_REGULAR_EXPRESSION "^0,8,4,12,2,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,\n0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n14,13,12,11,10,9,8,7,6,5,4,3,2,1,\n14,13,12,11,10,9,8,7,6,5,4,3,1,\n1,3,4,5,6,7,8,9,10,11,12,13,14,\n1,3,4,5,6,7,8,9,10,11,12,13,14,\ninsert return = 17\ndump pool2 :8,\nre-insert return = 0\ndump pool2 :\ndump pool2 :8,\nGet OK\nNULL Get OK\nNeigh Get - hit OK\nNeigh Get - miss OK\nsearch 10 b 9 a 11\nNeigh Get - miss OK\nsearch 10 b 9 a 11\n1,3,5,6,7,9,11,13,14,\n4.8.10.\nMatch 5\nBetween test Before/After 5/6\nNull test Before/After -/1\n\nlock 0\nunlock\n$")
+rdb_legacy_case(rdb_test_data_get "^DAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\nDAAA\n$" -t4)
 
-add_test (rdb_test_registra rdb_test -t6)
-set_tests_properties (rdb_test_registra
-    PROPERTIES PASS_REGULAR_EXPRESSION "^rDB: Fatal: Duplicte pool name in rdb_register_pool\nPool 'null_custom_pool' index 0 flags .*: RDB_KCF requires a comparator\nIndex 0 \\\(zero\\\) can only be set via rdb_register_pool\nIndex outside pool's declared index range\nRedefinition of used index not allowed\nIndex outside pool's declared index range\nOk\n$")
+rdb_legacy_case(rdb_test_data_move "^0,8,4,12,2,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,13,3,11,7,15,\n0,8,4,12,10,6,14,1,9,5,\n0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,\n14,13,12,11,10,9,8,7,6,5,4,3,2,1,\n14,13,12,11,10,9,8,7,6,5,4,3,1,\n1,3,4,5,6,7,8,9,10,11,12,13,14,\n1,3,4,5,6,7,8,9,10,11,12,13,14,\ninsert return = 17\ndump pool2 :8,\nre-insert return = 0\ndump pool2 :\ndump pool2 :8,\nGet OK\nNULL Get OK\nNeigh Get - hit OK\nNeigh Get - miss OK\nsearch 10 b 9 a 11\nNeigh Get - miss OK\nsearch 10 b 9 a 11\n1,3,5,6,7,9,11,13,14,\n4.8.10.\nMatch 5\nBetween test Before/After 5/6\nNull test Before/After -/1\n\nlock 0\nunlock\n$" -t5)
 
+rdb_legacy_case(rdb_test_registra "^rDB: Fatal: Duplicte pool name in rdb_register_pool\nPool 'null_custom_pool' index 0 flags .*: RDB_KCF requires a comparator\nIndex 0 \\\(zero\\\) can only be set via rdb_register_pool\nIndex outside pool's declared index range\nRedefinition of used index not allowed\nIndex outside pool's declared index range\nOk\n$" -t6)
+
+add_executable(rdb_legacy_probe legacy_probe.c)
+# The subprocess probe exercises the runner and has no library dependency.
+set_property(TARGET rdb_legacy_probe PROPERTY LINK_LIBRARIES "")
+add_test(NAME rdb_legacy_runner COMMAND "${CMAKE_COMMAND}"
+    "-DPROBE=$<TARGET_FILE:rdb_legacy_probe>"
+    "-DRUNNER=${CMAKE_CURRENT_SOURCE_DIR}/check_legacy.cmake"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/check_legacy_runner.cmake")
+set_tests_properties(rdb_legacy_runner PROPERTIES TIMEOUT 30 LABELS "rdb;legacy")

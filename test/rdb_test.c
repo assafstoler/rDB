@@ -475,6 +475,12 @@ int register_pool_2() {
                             (void *) &td.i128 - (void *) &td.string,
                             RDB_KINT128 | RDB_KASC | RDB_BTREE,
                             NULL, 0) == -1) return -1;
+#else
+    // Keep the same index layout as pool1 without native 128-bit types.
+    if (rdb_register_um_idx(pool2, IDX_UI128,
+                (char *)&td.ui64 - td.string, RDB_KUINT64 | RDB_BTREE, NULL, 0) < 0) return -1;
+    if (rdb_register_um_idx(pool2, IDX_I128,
+                (char *)&td.i64 - td.string, RDB_KINT64 | RDB_BTREE, NULL, 0) < 0) return -1;
 #endif
 
 /*    if (rdb_register_um_idx(pool2,
@@ -559,7 +565,7 @@ int add_test_data (rdb_pool_t *pool, int loops) {
                          if (ptd==NULL) rdb_fatal("Allocation error in %s\n",__FUNCTION__);
                          //printf("%p - ",ptd);
                          ptd->string_ptr = calloc(1,16);
-                         if (ptd->string_ptr == NULL) return -1;
+                         if (ptd->string_ptr == NULL) { free(ptd); return -1; }
                          ptd->string[0]='A' + d;
                          ptd->string[1]='A' + c;
                          ptd->string[2]='A' + b;
@@ -602,12 +608,11 @@ int add_test_data (rdb_pool_t *pool, int loops) {
                     //printf("%s %d %u\n", ptd->string, ptd->i32, ptd->ui32);
                          rc=rdb_insert(pool,ptd);
                          //printf("rc=%d\n", rc);
-                    // We check that rDB was able to link all indexes. rDB will
-                    // simply skip indexes it can not link-in (due to 
-                    // duplicates, for example)
-                         if (rc!=TEST_INDEXES) {
-                             debug("Reduced index coverage test\n");
-                             //return -1; 
+                    // A successful insertion must link every configured index.
+                         if (rc != pool->indexCount) {
+                             free(ptd->string_ptr);
+                             free(ptd);
+                             return -1;
                          }
                         //fatal ("%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
                     }
@@ -627,7 +632,7 @@ int add_one_test_data (rdb_pool_t *pool, int loops) {
                     one_ptd=calloc(1,sizeof(test_data_one_t));
                     if (one_ptd==NULL) rdb_fatal("Allocation error in %s\n",__FUNCTION__);
                     one_ptd->string_ptr = calloc(1,16);
-                    if (one_ptd->string_ptr == NULL) return -1;
+                    if (one_ptd->string_ptr == NULL) { free(one_ptd); return -1; }
                     one_ptd->string[0]='A' + d;
                     one_ptd->string[1]='A' + c;
                     one_ptd->string[2]='A' + b;
@@ -670,12 +675,11 @@ int add_one_test_data (rdb_pool_t *pool, int loops) {
                     //printf("%s %d %u\n", one_ptd->string, one_ptd->i32, one_ptd->ui32);
                     rc=rdb_insert(pool,one_ptd);
                     //printf("rc=%d\n", rc);
-                    // We check that rDB was able to link all indexes. rDB will
-                    // simply skip indexes it can not link-in (due to 
-                    // duplicates, for example)
-                    if (rc!=TEST_INDEXES) {
-                        debug("Reduced index coverage test\n");
-                        //return -1; 
+                    // A successful insertion must link every configured index.
+                    if (rc != pool->indexCount) {
+                        free(one_ptd->string_ptr);
+                        free(one_ptd);
+                        return -1;
                     }
                     //fatal ("%s: INSERT rc=%d %s",__FUNCTION__ , rc, rdb_error_string);
                 }
@@ -685,14 +689,16 @@ int add_one_test_data (rdb_pool_t *pool, int loops) {
     return 0;
 }
 
-static int my_dump_clean(void *ptr){
+static int my_dump_clean(void *ptr, void *unused){
+    (void)unused;
 	ptd=ptr;
     printf("%d,",ptd->ui32);
 
 	return RDB_CB_OK;
 }
 
-static int my_dump_drop_2(void *ptr){
+static int my_dump_drop_2(void *ptr, void *unused){
+    (void)unused;
 	ptd=ptr;
 
 	if (ptd->ui32 == 2 ) {
@@ -709,7 +715,8 @@ static int my_dump_drop_2(void *ptr){
 	if (ptd->ui32 == 5) return RDB_CB_ABORT;
 	return RDB_CB_OK;
 }*/
-static int my_dump_one_clean(void *ptr){
+static int my_dump_one_clean(void *ptr, void *unused){
+    (void)unused;
 	one_ptd=ptr;
     //printf("*\n");
     printf("%d,",one_ptd->ui32); //, one_ptd->string);
@@ -717,7 +724,8 @@ static int my_dump_one_clean(void *ptr){
 	return RDB_CB_OK;
 }
 
-static int my_dump_one_drop_2(void *ptr){
+static int my_dump_one_drop_2(void *ptr, void *unused){
+    (void)unused;
 	one_ptd=ptr;
 
 	if (one_ptd->ui32 == 2 ) {
@@ -728,12 +736,42 @@ static int my_dump_one_drop_2(void *ptr){
 	return RDB_CB_OK;
 }
 
-static int my_dump_one_stop_at_5(void *ptr){
+static int my_dump_one_stop_at_5(void *ptr, void *unused){
+    (void)unused;
 	one_ptd=ptr;
     printf("%d,",one_ptd->ui32);
 
 	if (one_ptd->ui32 == 5) return RDB_CB_ABORT;
 	return RDB_CB_OK;
+}
+
+// Plain rdb_delete only unlinks the record; its allocations remain ours.
+static void free_test_record(void *data)
+{
+    test_data_t *item = data;
+    if (!item) return;
+    free(item->string_ptr);
+    free(item);
+}
+
+static void free_one_record(void *data, void *unused)
+{
+    (void)unused;
+    test_data_one_t *item = data;
+    free(item->string_ptr); // Not indexed in the single-index fixture.
+    free(item);
+}
+
+static void cleanup_test_pools(void)
+{
+    const char *names[] = {"test_pool", "copy_pool", "no_keys_pool", "test_pool_4"};
+    for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+        rdb_pool_t *found = rdb_find_pool_by_name((char *)names[i]);
+        // Default flush owns the indexed strings; pool4 needs custom cleanup.
+        if (found) rdb_flush(found, i == 3 ? free_one_record : NULL, NULL);
+    }
+    rdb_clean(0);
+    pool1 = pool2 = pool3 = pool4 = NULL;
 }
 
 int main(int argc, char *argv[]) {
@@ -769,12 +807,12 @@ int main(int argc, char *argv[]) {
     if (test == 1) {
         
      rdb_init();
-        rdb_clean(0);
+        cleanup_test_pools();
 
         // repeat twice to make sure we can re_init after close       
         rdb_init();
 
-        rdb_clean(0);
+        cleanup_test_pools();
 
         info("Ok");
 
@@ -783,7 +821,7 @@ int main(int argc, char *argv[]) {
         rdb_init();
         if (-1 == (rc = register_pools())) exit(-1);
         info ("%s\n",NULL == rdb_find_pool_by_name("test_pool") ? "Fail" : "Ok");
-        rdb_clean(0);
+        cleanup_test_pools();
         info ("%s\n",NULL == rdb_find_pool_by_name("test_pool") ? "Ok" : "Fail");
 
     } else if (test == 3) {
@@ -801,6 +839,7 @@ int main(int argc, char *argv[]) {
             // value for uit tests... so we print index 0 data by order of dump
             while ((ptd = rdb_delete(pool1,dump,NULL)) != NULL) {
                 printf("%s,",ptd->string);
+                free_test_record(ptd);
             
             }
         } else rdb_dump(pool1,dump,",");
@@ -870,7 +909,7 @@ int main(int argc, char *argv[]) {
         info ("%s\n", NULL == (ptd=rdb_get_const(pool1,8, 3LLU)) ? "FAIL" : ptd->string );
         info ("%s\n", NULL == (ptd=rdb_get_const(pool1,10, 3LLU)) ? "FAIL" : ptd->string );
         
-        rdb_clean(0);
+        cleanup_test_pools();
 
     } else if (test == 5) {
         int rc;
@@ -911,23 +950,23 @@ int main(int argc, char *argv[]) {
 //        info ("%s\n", NULL == (ptd=rdb_delete_const(pool1,2, 4)) ? "FAIL" : ptd->string );
 //        info ("%s\n", NULL == (ptd=rdb_delete_const(pool1,2, 4)) ? "FAIL" : ptd->string );
 //        info ("%s\n", NULL == (ptd=rdb_delete_const(pool1,2, 9)) ? "FAIL" : ptd->string );
-        rdb_iterate(pool4,dump,(void *) &my_dump_one_clean, NULL, NULL, NULL);
+        rdb_iterate(pool4,dump,&my_dump_one_clean, NULL, NULL, NULL);
         info("%s\n",""); 
-        rdb_iterate(pool4,dump,(void *) &my_dump_one_drop_2, NULL, NULL, NULL);
+        rdb_iterate(pool4,dump,&my_dump_one_drop_2, NULL, free_one_record, NULL);
         info("%s\n","");
-        rdb_iterate(pool4,dump,(void *) &my_dump_one_stop_at_5, NULL, NULL, NULL);
+        rdb_iterate(pool4,dump,&my_dump_one_stop_at_5, NULL, NULL, NULL);
         info("%s\n","");
 
         // FIFO tests
-        rdb_iterate(pool1,IDX_FIFO,(void *) &my_dump_clean, NULL, NULL, NULL);
+        rdb_iterate(pool1,IDX_FIFO,&my_dump_clean, NULL, NULL, NULL);
         info("%s\n","");
-        rdb_delete (pool1, IDX_FIFO, NULL);
-        rdb_delete (pool1, IDX_LIFO, NULL);
-        rdb_iterate(pool1,IDX_LIFO,(void *) &my_dump_clean, NULL, NULL, NULL);
+        free_test_record(rdb_delete(pool1, IDX_FIFO, NULL));
+        free_test_record(rdb_delete(pool1, IDX_LIFO, NULL));
+        rdb_iterate(pool1,IDX_LIFO,&my_dump_clean, NULL, NULL, NULL);
         info("%s\n","");
-        rdb_iterate(pool1,IDX_LIFO,(void *) &my_dump_drop_2, NULL, NULL, NULL);
+        rdb_iterate(pool1,IDX_LIFO,&my_dump_drop_2, NULL, NULL, NULL);
         info("%s\n","");
-        rdb_iterate(pool1,IDX_FIFO,(void *) &my_dump_clean, NULL, NULL, NULL);
+        rdb_iterate(pool1,IDX_FIFO,&my_dump_clean, NULL, NULL, NULL);
         info("%s\n","");
 
         rdb_dump(pool1, 2, ",");
@@ -935,29 +974,36 @@ int main(int argc, char *argv[]) {
 
         // To test failed insert due to mixed index....
         // add '8' record to pool2
-        ptd = rdb_get_const(pool1, 2, 8);
-        test_data_t copy8 = *ptd;
-        memset(copy8.pp, 0, sizeof(copy8.pp));
-        rc = rdb_insert (pool2, &copy8);
+        // Use independent, heap-owned storage so both pools can be flushed.
+        test_data_t *copy = malloc(sizeof(*copy));
+        if (!copy) rdb_fatal("FAIL");
+        *copy = *(test_data_t *)rdb_get_const(pool1, 2, 8);
+        memset(copy->pp, 0, sizeof(copy->pp));
+        copy->string_ptr = strdup(copy->string_ptr);
+        if (!copy->string_ptr) { free(copy); rdb_fatal("FAIL"); }
+        rc = rdb_insert(pool2, copy);
+        if (rc != TEST_INDEXES) { free_test_record(copy); rdb_fatal("FAIL"); }
         printf("insert return = %d\n", rc);
         info ("dump pool2 :");
-        rdb_iterate(pool2,1,(void *) &my_dump_clean, NULL, NULL, NULL);
+        rdb_iterate(pool2,1,&my_dump_clean, NULL, NULL, NULL);
         info ("\n");
 
         // delete first two idx's
         rdb_delete_one (pool2, 0, rdb_get_const (pool2, 2, 8));
 
         // try Adding same... 
-        rc = rdb_insert (pool2, rdb_delete_const (pool1, 2, 8));
+        test_data_t *candidate = rdb_delete_const(pool1, 2, 8);
+        rc = rdb_insert(pool2, candidate);
+        if (rc == 0) free_test_record(candidate);
         printf("re-insert return = %d\n", rc);
         info ("dump pool2 :");
-        rdb_iterate(pool2,0,(void *) &my_dump_clean, NULL, NULL, NULL);
+        rdb_iterate(pool2,0,&my_dump_clean, NULL, NULL, NULL);
         info ("\n");
        
         // here we re-insert the deleted index to 'fix' the damaged pool 
         rdb_insert_one (pool2, 0, rdb_get_const (pool2, 2, 8));
         info ("dump pool2 :");
-        rdb_iterate(pool2,0,(void *) &my_dump_clean, NULL, NULL, NULL);
+        rdb_iterate(pool2,0,&my_dump_clean, NULL, NULL, NULL);
         info ("\n");
         // end of partial insert test case
 
@@ -965,9 +1011,9 @@ int main(int argc, char *argv[]) {
         del_idx = 4;
         rdb_move (pool2, pool1, 2, &del_idx);
         del_idx = 12;
-        rdb_delete(pool1,2,&del_idx);
+        free_test_record(rdb_delete(pool1,2,&del_idx));
         del_idx = 0;
-        rdb_delete(pool1,2,&del_idx);
+        free_test_record(rdb_delete(pool1,2,&del_idx));
 
         del_idx = 1;
         if (NULL != rdb_get(pool1,2,&del_idx)) {
@@ -1288,7 +1334,8 @@ int main(int argc, char *argv[]) {
     //Clean out rdb leftovers (like pools data), free all resources.
     rdb_clean(0);
 */
-    exit(0);
+    cleanup_test_pools();
+    return 0;
 }
 
 
