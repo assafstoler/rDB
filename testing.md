@@ -82,6 +82,23 @@ run exactly once after all indexes exclude the record and rDB has cleared
 its indexed string. The six cases have 30-second timeouts and run with
 `ctest --test-dir build -L iterate_companion --output-on-failure`.
 
+The Linux concurrency contract tests add eight cases alongside the existing
+thread tests. Six workers exercise registry creation/removal, independent
+lookup readers with a permanent pool or an empty registry, and simultaneous
+registration of one name (exactly one winner). A shared-pool case uses barriers
+to check all records in sorted order between locked insertion and deletion
+phases. Lookup readers borrow only a pool kept alive until they join; temporary
+pool handles remain owned by their writers.
+
+Statistics readers run alongside locked insert/delete/move/iterate/flush
+operations and registry churn. Reports must contain valid names and bounded
+counts; tiny buffers must remain terminated without overwriting their guards.
+Writers register/drop pools while holding a separate pool lock, and another
+case requests statistics while already holding the reported pool's lock, to
+catch lock-order regressions. Checks remain enabled in Release, with separate
+30-second CTest timeouts and no timing thresholds. Run these eight cases with
+`ctest --test-dir build -L concurrency --output-on-failure`.
+
 Install to a staging directory without changing system libraries:
 
 ```sh
