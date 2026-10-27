@@ -70,14 +70,6 @@
 #define __uintmax_t uint64_t
 #endif
 
-/*typedef struct RDB_INDEX_DATA {
-    int     segments;
-    int     **key_offset;                        ///< we'll need a key offset for every index segment, so it must be dynamically allocated
-    int     **flags;                            ///< flags for this pool (index head) or flags for this index continuation (field type)
-} rdb_index_data_t;
-*/
-
-
 rdb_pool_t  *pool_root;
 
 typedef struct {
@@ -118,13 +110,6 @@ struct rdb_reindex_ctx {
 };
 
 static uint32_t rdb_init_flags;
-
-
-//struct  RDB_POOLS **poolIds;
-
-#ifdef KM
-//struct  RDB_POOLS **poolIdsTmp;
-#endif
 
 char      *rdb_error_string = NULL;
 
@@ -494,8 +479,6 @@ int set_pool_fn_pointers(rdb_pool_t *pool, int i, uint32_t flags, void *cmp_fn){
         pool->fn[i] = key_cmp_str_p;
         pool->get_fn[i] = key_cmp_const_str_p;
         pool->get_const_fn[i] = key_cmp_const_str_p;
-    //else if (FLAGS & RDB_KTME)    pool->fn[0] = keyCompareTME;
-    //else if (FLAGS & RDB_KTMA)    pool->fn[0] = keyCompareTMA;
     } else if (flags & RDB_NOKEYS) {
         pool->fn[i] = NULL;
         pool->get_fn[i] = NULL;
@@ -969,12 +952,7 @@ int key_cmp_const_ssize_t (ssize_t *old, ssize_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
-/* 128 bit fn's are tricky when we don't have 128 native type to supply a 
- * comperator.
- * 256 bit's are alwways that way .... 
- * as such, 'const' fn's will take biggest native size as comperator while
- * non-const will use full size of type
- * */
+// 128-bit keys require native compiler support.
 
 #ifdef USE_128_BIT_TYPES
 int key_cmp_int128 (__int128_t *old, __int128_t *new)
@@ -994,38 +972,7 @@ int key_cmp_const_uint128 (__uint128_t *old, __uint128_t new)
 {
     return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
 }
-#else
-//TODO: use GMP if found, to support big numbers safely.
-/* - this junk is here until i decide which way to go - GMP, native, or NONE, when we have no native 128 bit support
- * currently it's out - no 128 bit without 128 bit native support.
- *
-int key_cmp_int128 (type_128 *old, type_128 *new)
-{
-    return (*new->msb <  *old->msb) ? -1 : (( *new->msb > *old->msb) ? 1 : ((*new->lsb < *old->lsb) ? -1 : ((*new->lsb > *old->lsb) ? 1 : 0 ))); 
-}
-int key_cmp_const_int128 (type_128 *old, __intmax_t new)
-{
-    //type_128 new_new;
-    //new_new.lsb=new;
-    //if (new < 0) new_new.msb=0xffffffffffffffff; // extending the sign
-    if (0 < *old->msb ) return -1;    // must be bigger then what we can spcify with 64 bits 'new'
-    if (0 > *old->msb && *old->msb != -1) return 1;
-    return (new <  (int64_t) *old->lsb) ? -1 : (( new > (int64_t) *old->lsb) ? 1 : 0); 
-    //return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
-    //return (new <  *old->msb) ? -1 : (( new > *old->msb) ? 1 : ((new < *old->lsb) ? -1 : ((new > *old->lsb) ? 1 : 0 ))); 
-}
-
-int key_cmp_uint128 (__uint128_t *old, type_128 *new)
-{
-    return (*new <  *old) ? -1 : (( *new > *old) ? 1 : 0); 
-    return (*new->msb <  *old->msb) ? -1 : (( *new->msb > *old->msb) ? 1 : ((*new->lsb < *old->lsb) ? -1 : ((*new->lsb > *old->lsb) ? 1 : 0 ))); 
-}
-int key_cmp_const_uint128 (__uint128_t *old, __uint128_t new)
-{
-    return (new <  *old) ? -1 : (( new > *old) ? 1 : 0); 
-}*/
 #endif
-//TODO add 256 bit types, and fix rDB.h line 38 to reflect
 
 int key_cmp_str (char *old, char *new)
 {
@@ -1040,26 +987,7 @@ int key_cmp_const_str_p (char **old, char *new)
 {
     return strcmp ( new, *old);
 }
-/*int keyCompareTME (struct timeval *key, struct timeval *keyNew)
-{
-    if (keyNew->tv_sec != key->tv_sec) return ((keyNew->tv_sec < key->tv_sec) ? -1 : 1);
-
-    if (keyNew->tv_usec != key->tv_sec) return ((keyNew->tv_usec < key->tv_usec) ? -1 : 1);
-    return 0;
-}*/
-
-/*int keyCompareTMA (TVA *key, TVA *keyNew)
-{
-    if (keyNew->tv.tv_sec != key->tv.tv_sec) return ((keyNew->tv.tv_sec <
-                        key->tv.tv_sec) ? -1 : 1);
-    if (keyNew->tv.tv_usec != key->tv.tv_usec) return ((keyNew->tv.tv_usec <
-                        key->tv.tv_usec) ? -1 : 1);
-    if (keyNew->acc != key->acc) return ((keyNew->acc < key->acc) ? -1 : 1);
-    return 0;
-}*/
-
-//TODO: some compilers dont like this inlining. need more research
-/*inline*/ void set_pointers (
+void set_pointers (
         rdb_pool_t *pool, 
         int index, 
         void *start, 
@@ -1107,8 +1035,6 @@ static void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start
     PP_T   *pp;
     const void *key;
 
-    if (start == NULL && pool->root[index] == NULL) return;
-
     if (start == NULL)
         state->max_levels = 1;
     else
@@ -1120,9 +1046,6 @@ static void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start
     if (pool->FLAGS[index] & RDB_BTREE && (pool->FLAGS[index] & RDB_NOKEYS))  {
         pp = ((void *) (pool->root[index])) + (sizeof (PP_T) * index) ;    // print data-head
         while (pp) {
-            //searchNext = (void **) pp;
-            //key = (void *) searchNext + pool->key_offset[0];
-            //info ("%s%s", &key->str, separator);
             rdb_c_info ("%p%s", pp, separator);
             pp = pp->right;
         }
@@ -1215,19 +1138,6 @@ static void _rdb_dump (rdb_pool_t *pool, int index, char *separator, void *start
             case RDB_KCFUT:
                 rdb_c_info ("%p%s", (void *)key, separator);
                 break;
- /*           case RDB_KTME:
-                printoutalways ("Dump_TME: %ld:%ld\n", key->tv.tv_sec, key->tv.tv_usec);
-                break;
-
-            case RDB_KTMA:
-                printoutalways ("Dump_TMA: %lu:%lu.%lu\n", (unsigned long) key->tva.tv.tv_sec,
-                                (unsigned long) key->tva.tv.tv_usec, (unsigned long) key->tva.acc);
-                break;
-*/
-            /*case RDB_K4U32A:
-                printoutalways ("Dump_4U23A: %lu:%lu:%lu:%lu\n", (unsigned long) key->u32a.l1,
-                                (unsigned long) key->u32a.l2, (unsigned long) key->u32a.l3, (unsigned long) key->u32a.acc);
-                break;*/
         }
 
 #ifdef DEBUG
@@ -1325,7 +1235,7 @@ int _rdb_insert (
                     ppkNew->balance = 0;
                     pool->tail[index] = data;
                 }
-                else if (pool->FLAGS[index] & RDB_KLIFO) {   
+                else {
                     // LIFO, add to head, as we always read/remove from head 
                     // forward
                     ppkParent = (void *) pool->root[index] + (sizeof (PP_T) * index);
@@ -1656,11 +1566,10 @@ int rdb_insert_one (rdb_pool_t *pool, int index, void *data)
 }
 
 void   *_rdb_get (
-        rdb_pool_t  *pool, 
-        int         index, 
-        const void  *data, 
-        void        *start, 
-        int         partial) {
+        rdb_pool_t  *pool,
+        int         index,
+        const void  *data,
+        void        *start) {
 
     PP_T   *ppk;
     int     rc;
@@ -1693,7 +1602,7 @@ void   *_rdb_get (
                     return (NULL);
                 }
                 else
-                    return (_rdb_get (pool, index, data, ppk->left, partial));
+                    return (_rdb_get (pool, index, data, ppk->left));
             } else if (rc > 0) {
                 //i right side
 
@@ -1703,7 +1612,7 @@ void   *_rdb_get (
                     return (NULL);
                 }
                 else
-                    return (_rdb_get (pool, index, data, ppk->right, partial));
+                    return (_rdb_get (pool, index, data, ppk->right));
             }
             else {
                 debug("Get:Done\n");
@@ -1714,65 +1623,13 @@ void   *_rdb_get (
     return NULL;                                //should never get here
 }
 
-/*
-void   *_rdb_get_const (
-        rdb_pool_t  *pool, 
-        int         index, 
-        __int128_t  value, 
-        void        *start, 
-        int         partial) {
-
-    PP_T   *ppk;
-    int     rc;
-    void   *dataHead;
-
-    if ((pool->FLAGS[index] & RDB_BTREE) == RDB_BTREE) {
-
-        if (pool->root[index] == NULL) {
-            debug("GetFail - pool=%s, Null rool node\n",pool->name);
-            return (NULL);
-        }
-        else {
-            set_pointers (pool, index, start, &ppk, &dataHead);
-
-            if ((rc = pool->get_const_fn[index] (dataHead + 
-                    pool->key_offset[index], value)) < 0) {
-                // left side
-
-                debug("Left Get\n");
-
-                if (ppk->left == NULL) {
-                    return (NULL);
-                }
-                else
-                    return (_rdb_get_const (pool, index, value, ppk->left, partial));
-            } else if (rc > 0) {
-                //i right side
-
-                debug("Right Get\n");
-
-                if (ppk->right == NULL) {
-                    return (NULL);
-                }
-                else
-                    return (_rdb_get_const (pool, index, value, ppk->right, partial));
-            }
-            else {
-                debug("Get:Done\n");
-                return (dataHead); 
-            }
-        }
-    }
-    return NULL;                                //should never eet here
-}*/
-
 // Find requested data set and return a pointer to it
 // As a special case, if data = null, root node will be returned.
 void   *rdb_get (rdb_pool_t *pool, int idx, const void *data)
 {
     if (!valid_pool_index(pool, idx) || pool->fault.code) return NULL;
     debug("Get:pool=%s,idx=%d", pool->name, idx);
-    return _rdb_get (pool, idx, data, NULL, 0);
+    return _rdb_get (pool, idx, data, NULL);
 }
 
 union constant_lookup_storage {
@@ -1827,7 +1684,7 @@ void   *rdb_get_const (rdb_pool_t *pool, int idx, __intmax_t value)
     void *key = constant_lookup_key(pool, idx, &value, &storage);
     if (!key) return NULL;
     debug("Get:pool=%s,idx=%d", pool->name, idx);
-    return _rdb_get(pool, idx, key, NULL, 0);
+    return _rdb_get(pool, idx, key, NULL);
 }
 
 void   *_rdb_get_neigh (
@@ -1835,7 +1692,6 @@ void   *_rdb_get_neigh (
         int         index, 
         void        *data, 
         void        *start, 
-        int         partial,
         void        **before, 
         void        **after) {
 
@@ -1865,26 +1721,24 @@ void   *_rdb_get_neigh (
 
                 *after = (NULL == start) ? (void *) pool->root[index] : start ;
 
-                //*after=start;
                 if (ppk->left == NULL) {
                     return (NULL);
                 }
                 else
                     return (_rdb_get_neigh (pool, index, data, ppk->left, 
-                                                    partial, before, after));
+                                                    before, after));
             }
             else if (rc > 0) {
                 //right side
                 debug("Right Get\n");
                 *before = (NULL == start) ? (void *) pool->root[index] : start ;
 
-                //*before=start;
                 if (ppk->right == NULL) {
                     return (NULL);
                 }
                 else
                     return (_rdb_get_neigh (pool, index, data, ppk->right, 
-                                                    partial, before, after));
+                                                    before, after));
             }
             else {
                 debug("Get:Done\n");
@@ -1904,7 +1758,7 @@ void   *rdb_get_neigh (rdb_pool_t *pool, int idx, void *data, void **before, voi
 {
     *before = *after = NULL;
     if (!valid_pool_index(pool, idx) || pool->fault.code) return NULL;
-    return _rdb_get_neigh (pool, idx, data, NULL, 0, before, after);
+    return _rdb_get_neigh (pool, idx, data, NULL, before, after);
 }
 
 
@@ -1930,15 +1784,14 @@ int _rdb_iterate (
     void   *dataHead;
     PP_T   *pp, *pr;
     int     rc, rc2 = 0;
-    int     rc3 = 0;
 
     if (pool->FLAGS[index] & RDB_BTREE) {
         set_pointers (pool, index, start, &pp, &dataHead);
 
         if (*resumePtr != NULL) {
             debug ("0->Resumeing\n");
-            if ((rc3 = pool->fn[index] (dataHead + pool->key_offset[index],
-                            (void *) *resumePtr /*+ (sizeof (PP_T) * pool->indexCount)*/ + pool->key_offset[index])) < 0) {
+            if (pool->fn[index] (dataHead + pool->key_offset[index],
+                                *resumePtr + pool->key_offset[index]) < 0) {
                 debug("1->left(i=%d)\n",index);
                 if ( 1 == ( 1 & (rc =  _rdb_iterate (pool, index, fn, data,
                                     del_fn, delfn_data, pp->left, start, RDB_TREE_LEFT,
@@ -2005,29 +1858,13 @@ int _rdb_iterate (
                     *resumePtr = (void *) pr - (sizeof (PP_T) * index);
                 }
                 else if (parent == NULL) {
-                    pr = (void *) pool->root[index] + (sizeof (PP_T) * index);
-
-                    if (pr->right) {
-                        pr = pr->right + (sizeof (PP_T) * index);
-
-                        while(pr->left != NULL) {
-                            pr = pr->left + (sizeof (PP_T) * index);
-                        }
-                        *resumePtr = (void *) pr - (sizeof (PP_T) * index);
-                    }
-                    else {
-                        *resumePtr = NULL; 
-                        // we are removing root and there is nothing to it's
-                        // right, we are done
-                        // Signal we are done
-                        rc = RDBFE_NODE_DONE | (rc & RDBFE_ABORT);  
-                    }
-
+                    // Removing the root with no right child finishes this scan.
+                    *resumePtr = NULL;
+                    rc = RDBFE_NODE_DONE | (rc & RDBFE_ABORT);
                 }
                 else {   // Parent is not null
                     if (side == 0) {
                         *resumePtr = parent;
-                        //*resumePtr = (void *) parent - (sizeof (PP_T) * index);
                     }
                     else {
                         *resumePtr = NULL;
@@ -2066,15 +1903,13 @@ int _rdb_iterate (
 }
 
 int _rdb_iterate_list (
-        rdb_pool_t  *pool, 
-        int         index, 
-        int         fn (void *, void *), 
+        rdb_pool_t  *pool,
+        int         index,
+        int         fn (void *, void *),
         void        *data,
         void        del_fn(void *, void*),
-        void        *delfn_data, 
-        void        *start, 
-        void        *parent, 
-        int         side, 
+        void        *delfn_data,
+        void        *start,
         void        **resumePtr) {
 
     void   *dataHead;
@@ -2084,48 +1919,35 @@ int _rdb_iterate_list (
 rfeStart:
 
     if (*resumePtr) {
-        set_pointers (pool, index, *resumePtr, &pp, &dataHead); 
+        set_pointers (pool, index, *resumePtr, &pp, &dataHead);
         *resumePtr = NULL;
     } else
-        set_pointers (pool, index, start, &pp, &dataHead); 
-			
+        set_pointers (pool, index, start, &pp, &dataHead);
 
-    if (*resumePtr != NULL &&  (dataHead == *resumePtr)) *resumePtr = NULL; 
-                       // time to start working again
+    if (fn) rc2 = fn(dataHead, data);
+    if (pool->fault.code) return RDBFE_ABORT;
+    if (fn == NULL || RDB_CB_DELETE_NODE == rc2
+            || RDB_CB_DELETE_NODE_AND_ABORT == rc2 || RDB_CB_ABORT == rc2) {
 
-    if (*resumePtr == NULL) {
-        rc = 0;
+        if (rc2 == RDB_CB_DELETE_NODE_AND_ABORT)
+            rc = RDBFE_NODE_DELETED | RDBFE_ABORT;
+        else if (rc2 == RDB_CB_ABORT)
+            return RDBFE_ABORT;
+        else rc = RDBFE_NODE_DELETED;
 
-        if (fn) rc2 = fn(dataHead, data);
-        if (pool->fault.code) return RDBFE_ABORT;
-        if (fn == NULL || RDB_CB_DELETE_NODE == rc2
-                || RDB_CB_DELETE_NODE_AND_ABORT == rc2 ||
-                RDB_CB_ABORT == rc2 ) {
+        // This helper only visits FIFO/LIFO indexes; resume at the next record.
+        if (pp->right)
+            *resumePtr = (void *) pp->right - (sizeof (PP_T) * index);
+        else *resumePtr = NULL;
 
-            if (rc2 == RDB_CB_DELETE_NODE_AND_ABORT) 
-                rc =  RDBFE_NODE_DELETED | RDBFE_ABORT ;
-            else if (rc2 == RDB_CB_ABORT) 
-                return RDBFE_ABORT;
-            else rc = RDBFE_NODE_DELETED;
+        if (unlink_record(pool, dataHead, NULL, "iterate") < 0)
+            return RDBFE_ABORT;
 
-            // Setting resume pointer to next record
-            if (pool->FLAGS[index] & (RDB_NOKEYS)) { 
-                // FIFO/LIFO, no need to recurse -
-                if (pp->right) {
-                    *resumePtr = (void *) pp->right - (sizeof (PP_T) * index);
-                }
-                else *resumePtr = NULL ;   // we are the last one;
-            }
+        reindex_free_record_strings(pool, dataHead);
+        if (del_fn) del_fn(dataHead, delfn_data);
+        else if (dataHead) rdb_free(dataHead);
 
-            if (unlink_record(pool, dataHead, NULL, "iterate") < 0)
-                return RDBFE_ABORT;
-
-            reindex_free_record_strings(pool, dataHead);
-            if (del_fn) del_fn(dataHead, delfn_data);
-            else if (dataHead) rdb_free(dataHead);
-
-            return rc;
-        }
+        return rc;
     }
 
     if (pp->right) {
@@ -2190,7 +2012,7 @@ void rdb_iterate(
             // list iteration
             debug("List iterate - %s",pool->name);
             rc = _rdb_iterate_list (pool, index, fn, fn_data, del_fn, del_data,
-                                pool->root[index], NULL, 0, &resumePtr);
+                                pool->root[index], &resumePtr);
         }
 	    debug("rc=%d %p\n",rc, resumePtr);
     } while (!pool->fault.code && rc != 0 && ( rc & RDBFE_ABORT ) != RDBFE_ABORT &&
@@ -3061,7 +2883,7 @@ int _rdb_delete_by_pointer (
 
         // We just deleted a leaf, parent need to update balance.
         return DELETE_SHRANK;
-    } else if (ppkDead->right && (ppkDead->left == NULL)) {
+    } else if (ppkDead->left == NULL) {
         // One child on the right
         if (parent) {
             if (side)
@@ -3076,7 +2898,7 @@ int _rdb_delete_by_pointer (
         // parent need to update balance.
         return DELETE_SHRANK;
     }
-    else if ((ppkDead->right == NULL) && ppkDead->left) {
+    else if (ppkDead->right == NULL) {
         // One chile on left
         if (parent) {
             if (side)
@@ -3193,8 +3015,6 @@ retest_delete_cond:
 
                 if (rc2 <= DELETE_MISSING) return rc2;
                 if (DELETE_SHRANK == rc2) { // And I am the parent...
-                    ppkParent = (PP_T *) parent + lookupIndex;
-                    ppkParent = parent + lookupIndex;
                     debug("- bal  to be changed = %d\n", ppkDead->balance);
                     // If on right side then add -1 - subtract one form balance
                     ppkDead->balance += (rc > 0) ? -1 : 1;
@@ -3491,7 +3311,7 @@ static void *delete_record(rdb_pool_t *pool, int index, void *key,
     if (pool->FLAGS[index] & RDB_NOKEYS)
         record = pool->root[index];
     else
-        record = key ? _rdb_get(pool, index, key, NULL, 0) : NULL;
+        record = key ? _rdb_get(pool, index, key, NULL) : NULL;
 
     if (!record || unlink_record(pool, record, queue_links, "delete") < 0)
         return NULL;
