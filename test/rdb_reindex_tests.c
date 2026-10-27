@@ -629,6 +629,15 @@ static int try_kcfut_change(void *data, void *unused, rdb_reindex_ctx_t *ctx)
     return RDB_CB_OK;
 }
 
+static void kcfut_record_cleanup(void *data, void *unused)
+{
+    record_t *record = data;
+    (void)unused;
+    // The opaque KCFUT comparator does not transfer string ownership to rDB.
+    free(record->name);
+    free(record);
+}
+
 static void test_kcfut_modes(void)
 {
     int first_offset = (int)offsetof(record_t, id) - (int)(sizeof(rdb_bpp_t) * 2);
@@ -648,7 +657,7 @@ static void test_kcfut_modes(void)
     CHECK(rdb_iterate_reindex(pool, 0, count_callback, &visits,
                 NULL, NULL) == RDB_ERR_REINDEX_UNSUPPORTED);
     CHECK(visits == 0);
-    rdb_flush(pool, NULL, NULL);
+    rdb_flush(pool, kcfut_record_cleanup, NULL);
 
     reset_rdb(RDB_INIT_ALLOW_KCFUT);
     pool = rdb_register_um_pool("reindex-kcfut-allow", 2, first_offset,
@@ -660,7 +669,7 @@ static void test_kcfut_modes(void)
     CHECK(rdb_iterate_reindex(pool, 0, try_kcfut_change,
                 NULL, NULL, NULL) == RDB_ERR_REINDEX_UNSUPPORTED);
     CHECK(rdb_pool_get_fault(pool, NULL) == 0);
-    rdb_flush(pool, NULL, NULL);
+    rdb_flush(pool, kcfut_record_cleanup, NULL);
 }
 
 typedef struct {
